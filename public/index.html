@@ -460,6 +460,10 @@
       </div>
       <div class="panel-body">
         <div class="item-list" id="citiesList"></div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="allCitiesCheck" onchange="toggleAllCities(this.checked)" style="accent-color:var(--accent);">
+          <label for="allCitiesCheck" style="font-size:12px;color:var(--text2);cursor:pointer;">همه شهرها برای گزارش</label>
+        </div>
         <div id="addCityForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
           <div class="form-row">
             <div class="form-group">
@@ -487,6 +491,10 @@
       </div>
       <div class="panel-body">
         <div class="item-list" id="topicsList"></div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="allTopicsCheck" onchange="toggleAllTopics(this.checked)" style="accent-color:var(--accent);">
+          <label for="allTopicsCheck" style="font-size:12px;color:var(--text2);cursor:pointer;">همه موضوعات برای گزارش</label>
+        </div>
         <div id="addTopicForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
           <div class="form-group">
             <label>نام موضوع</label>
@@ -547,6 +555,53 @@ function formatFaDate(iso) {
   return d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Report selection helpers
+  function toggleAllCities(checked) {
+    const cfg = currentConfig;
+    if (!cfg) return;
+    cfg.districts.forEach(d => d._reportSelected = checked);
+    renderCities(cfg.districts);
+    document.getElementById('allCitiesCheck').checked = checked;
+  }
+
+  function toggleAllTopics(checked) {
+    const cfg = currentConfig;
+    if (!cfg || !cfg.topics) return;
+    Object.keys(cfg.topics).forEach(t => {
+      if (typeof cfg.topics[t] === 'object') cfg.topics[t]._reportSelected = checked;
+    });
+    renderTopics(cfg.topics);
+    document.getElementById('allTopicsCheck').checked = checked;
+  }
+
+  function toggleCityReport(name, checked) {
+    const cfg = currentConfig;
+    if (!cfg) return;
+    const ci = cfg.districts.find(d => d.name === name);
+    if (ci) ci._reportSelected = checked;
+    renderCities(cfg.districts);
+    updateAllCheckboxes();
+  }
+
+  function toggleTopicReport(name, checked) {
+    const cfg = currentConfig;
+    if (!cfg || !cfg.topics) return;
+    if (typeof cfg.topics[name] === 'object') cfg.topics[name]._reportSelected = checked;
+    renderTopics(cfg.topics);
+    updateAllCheckboxes();
+  }
+
+  function updateAllCheckboxes() {
+    const cfg = currentConfig;
+    if (!cfg) return;
+    const allCitiesChecked = cfg.districts.every(d => d._reportSelected);
+    const allTopicsChecked = cfg.topics && Object.values(cfg.topics).every(t => typeof t === 'object' && t._reportSelected);
+    const citiesCb = document.getElementById('allCitiesCheck');
+    const topicsCb = document.getElementById('allTopicsCheck');
+    if (citiesCb) citiesCb.checked = allCitiesChecked;
+    if (topicsCb) topicsCb.checked = allTopicsChecked;
+  }
+
 // Load data
 async function loadStatus() {
   try {
@@ -582,46 +637,52 @@ async function loadStatus() {
 }
 
 // Render cities
-function renderCities(cities) {
-  const list = document.getElementById('citiesList');
-  if (!cities || cities.length === 0) {
-    list.innerHTML = '<div style="color:var(--text3);font-size:13px;">شهری اضافه نشده</div>';
-    return;
-  }
-  list.innerHTML = cities.map(c => `
-    <div class="item ${c._disabled ? 'disabled' : ''}">
-      <div class="item-left">
-        <div>
-          <div class="item-name">${escHtml(c.name)}</div>
-          <div class="item-detail">${escHtml(c.province || '')} ${c.id ? '· کد: ' + c.id : ''}</div>
+  function renderCities(cities) {
+    const list = document.getElementById('citiesList');
+    if (!cities || cities.length === 0) {
+      list.innerHTML = '<div style="color:var(--text3);font-size:13px;">شهری اضافه نشده</div>';
+      return;
+    }
+    list.innerHTML = cities.map(c => {
+      if (c._reportSelected === undefined) c._reportSelected = true;
+      return `
+      <div class="item ${c._disabled ? 'disabled' : ''}">
+        <div class="item-left" style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" ${c._reportSelected ? 'checked' : ''} onchange="toggleCityReport('${escJs(c.name)}', this.checked)" style="accent-color:var(--accent);" width="18">
+          <div>
+            <div class="item-name">${escHtml(c.name)}</div>
+            <div class="item-detail">${escHtml(c.province || '')} ${c.id ? '· کد: ' + c.id : ''}</div>
+          </div>
         </div>
-      </div>
-      <div class="toggle ${c._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(c.name)}', 'city')"></div>
-    </div>
-  `).join('');
-}
-
+        <div class="toggle ${c._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(c.name)}', 'city')"></div>
+      </div>`;
+    }).join('');
+  }
 // Render topics
-function renderTopics(topics) {
-  const list = document.getElementById('topicsList');
-  if (!topics || Object.keys(topics).length === 0) {
-    list.innerHTML = '<div style="color:var(--text3);font-size:13px;">موضوعی اضافه نشده</div>';
-    return;
-  }
-  list.innerHTML = Object.entries(topics).map(([name, kw]) => {
-    const kws = Array.isArray(kw) ? kw.join(', ') : kw;
-    return `
-    <div class="item ${kw._disabled ? 'disabled' : ''}">
-      <div class="item-left">
-        <div>
-          <div class="item-name">${escHtml(name)}</div>
-          <div class="item-detail">${escHtml(kws)}${kw._disabled ? ' · خاموش' : ''}</div>
+  function renderTopics(topics) {
+    const list = document.getElementById('topicsList');
+    if (!topics || Object.keys(topics).length === 0) {
+      list.innerHTML = '<div style="color:var(--text3);font-size:13px;"> موضوعی اضافه نشده</div>';
+      return;
+    }
+    list.innerHTML = Object.entries(topics).map(([name, kw]) => {
+      const kws = Array.isArray(kw) ? kw.join(', ') : kw;
+      const isObj = typeof kw === 'object';
+      const selected = isObj ? kw._reportSelected : false;
+      const disabled = isObj ? kw._disabled : false;
+      return `
+      <div class="item ${disabled ? 'disabled' : ''}">
+        <div class="item-left" style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" ${selected ? 'checked' : ''} onchange="toggleTopicReport('${escJs(name)}', this.checked)" style="accent-color:var(--accent);" width="18">
+          <div>
+            <div class="item-name">${escHtml(name)}</div>
+            <div class="item-detail">${escHtml(kws)}${disabled ? ' · خاموش' : ''}</div>
+          </div>
         </div>
-      </div>
-      <div class="toggle ${kw._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(name)}', 'topic')"></div>
-    </div>`;
-  }).join('');
-}
+        <div class="toggle ${disabled ? '' : 'on'}" onclick="toggleItem('${escJs(name)}', 'topic')"></div>
+      </div>`;
+    }).join('');
+  }
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
