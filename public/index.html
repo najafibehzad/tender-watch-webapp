@@ -444,6 +444,9 @@
       <button class="btn btn-primary scan-btn" id="scanBtn" onclick="doScan()">
         🚀 اسکن فوری
       </button>
+      <button class="btn" id="pdfBtn" onclick="doPdf()" style="background:rgba(255,165,2,0.15);color:#ffa502;border:1px solid rgba(255,165,2,0.3);padding:14px 20px;border-radius:30px;font-size:14px;cursor:pointer;">
+        📄 مهلت‌دارها
+      </button>
     </div>
   </section>
 
@@ -702,25 +705,55 @@ async function addTopic() {
 }
 
 // Scan
-async function doScan() {
-  const btn = document.getElementById('scanBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
-  try {
-    const data = await apiPost('/scan', {});
-    if (data.ok) {
-      toast(data.reply || 'اسکن کامل شد');
-      await loadStatus();
-    } else {
-      toast(data.error || 'خطا در اسکن', true);
+  async function doScan() {
+    const btn = document.getElementById('scanBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
+    try {
+      const data = await apiPost('/scan', {});
+      if (data.ok) {
+        toast(data.reply || 'اسکن کامل شد');
+        await loadStatus();
+      } else {
+        toast(data.error || 'خطا در اسکن', true);
+      }
+    } catch (e) {
+      toast('خطا در ارتباط', true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🚀 اسکن فوری';
     }
-  } catch (e) {
-    toast('خطا در ارتباط', true);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '🚀 اسکن فوری';
   }
-}
+
+  // PDF report
+  async function doPdf() {
+    const btn = document.getElementById('pdfBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> در حال تولید PDF...';
+    try {
+      const data = await apiPost('/pdf', {});
+      if (data.ok) {
+        toast('PDF آماده شد — ' + (data.pdfCount || 0) + ' مناقصه');
+        if (data.pdfFile) {
+          // Open the PDF file
+          const a = document.createElement('a');
+          a.href = 'file:///' + data.pdfFile.replace(/\\/g, '/');
+          a.download = data.pdfFile.split('/').pop();
+          a.target = '_blank';
+          a.click();
+        }
+        await loadStatus();
+      } else {
+        toast(data.error || 'خطا در تولید PDF', true);
+      }
+    } catch (e) {
+      toast('خطا در ارتباط', true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
 
 // Init
 loadStatus();

@@ -137,7 +137,49 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // POST /api/toggle — direct config edit
+  // POST /api/pdf — generates PDF of deadline-driven tenders (async, non-blocking)
+  if (p === '/api/pdf' && req.method === 'POST') {
+    return new Promise(resolve => {
+      try {
+        import('node:child_process').then(cp => {
+          const child = cp.spawn(
+            'C:\\Users\\behzad\\AppData\\Local\\hermes\\node\\node.exe',
+            ['C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch\\tender_watch.mjs', 'pdf', '--json'],
+            { cwd: 'C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch', maxBuffer: 10 * 1024 * 1024 }
+          );
+          let stdout = '';
+          let done = false;
+          const timer = setTimeout(() => {
+            if (done) return;
+            done = true;
+            child.kill();
+            resolve(sendJson({ ok: false, error: 'زمان تمام شد — دوباره امتحان کنید' }, 500));
+          }, 180000); // PDF takes longer — 3 min timeout
+
+          child.stdout.on('data', d => stdout += d);
+          child.stderr.on('data', () => {});
+          child.on('close', code => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            const out = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+            for (let i = out.length - 1; i >= 0; i--) {
+              try { return resolve(sendJson(JSON.parse(out[i]))); } catch {}
+            }
+            resolve(sendJson({ ok: code === 0, raw: stdout }));
+          });
+          child.on('error', err => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(sendJson({ ok: false, error: String(err) }, 500));
+          });
+        });
+      } catch (e) {
+        resolve(sendJson({ ok: false, error: String(e) }, 500));
+      }
+    });
+  }
   if (p === '/api/toggle' && req.method === 'POST') {
     const { name } = await readBody();
     if (!validName(name)) return sendJson({ ok: false, error: 'نام نامعتبر' }, 400);

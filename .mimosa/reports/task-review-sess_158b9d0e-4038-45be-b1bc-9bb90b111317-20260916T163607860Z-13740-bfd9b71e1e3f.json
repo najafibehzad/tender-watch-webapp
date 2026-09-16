@@ -1,6 +1,6 @@
 {
   "schema_version": "mimosa-task-review/v2",
-  "run_id": "20260916T165122056Z-27676-18695bd1340e",
+  "run_id": "20260916T163607860Z-13740-bfd9b71e1e3f",
   "run_status": "completed",
   "errors": [],
   "coverage": {
@@ -49,12 +49,12 @@
     "reasons": [],
     "reasons_truncated": false
   },
-  "generated_at": "2026-09-16T16:51:22.056Z",
+  "generated_at": "2026-09-16T16:36:07.860Z",
   "session_id": "sess_158b9d0e-4038-45be-b1bc-9bb90b111317",
   "target": ".",
   "revision": "ddf1ca786a8561bf9ee144a0a0d8e56d77f9c3b7",
   "rules_version": "unavailable",
-  "diff_hash": "ad40c7379f512447ccfa069059e5f3c86301ed5f6e8f0784e8f7836bb8711567",
+  "diff_hash": "a00fc63cf3b3203ea2401c53bd8e89e98531e837a31bbcf4d09fb2dbff4987ce",
   "diff": {
     "algorithm": "sha256",
     "changed_file_count": 1,
@@ -63,19 +63,27 @@
         "file": "server.js",
         "ranges": [
           {
-            "start": 140,
-            "end": 182
+            "start": 94,
+            "end": 94
+          },
+          {
+            "start": 96,
+            "end": 135
+          },
+          {
+            "start": 137,
+            "end": 137
           }
         ],
-        "before_hash": "2f0e5fecb94954188ea27ec399019c81cc8cf88cea271f0045d6adb17690e93b",
-        "after_hash": "8c30358126ff3d27eb787f5cae19804a2ab77f368bd5a0b5882497bed61fe7cc"
+        "before_hash": "ac46a7f5dd0d0c68f47eef453d9ab01c4100b560db629c0cf89f7d254f327e66",
+        "after_hash": "2f0e5fecb94954188ea27ec399019c81cc8cf88cea271f0045d6adb17690e93b"
       }
     ]
   },
   "timing": {
-    "started_at": "2026-09-16T16:51:20.864Z",
-    "completed_at": "2026-09-16T16:51:22.056Z",
-    "duration_ms": 1192,
+    "started_at": "2026-09-16T16:36:06.527Z",
+    "completed_at": "2026-09-16T16:36:07.860Z",
+    "duration_ms": 1333,
     "measurement": "hook_wall_clock"
   },
   "tokens": {
@@ -90,8 +98,8 @@
     "profile": "gate",
     "operation": "Stop",
     "outcome": "complete",
-    "latencyMs": 1192,
-    "peakMemoryBytes": 124805120,
+    "latencyMs": 1333,
+    "peakMemoryBytes": 126025728,
     "memoryMeasurement": "max-observed-process-rss",
     "scannedFiles": 1,
     "cache": {
@@ -118,8 +126,8 @@
   "finding_events": [],
   "findings": [],
   "artifacts": {
-    "immutable_report": ".mimosa/reports/task-review-sess_158b9d0e-4038-45be-b1bc-9bb90b111317-20260916T165122056Z-27676-18695bd1340e.json",
+    "immutable_report": ".mimosa/reports/task-review-sess_158b9d0e-4038-45be-b1bc-9bb90b111317-20260916T163607860Z-13740-bfd9b71e1e3f.json",
     "latest_report": ".mimosa/reports/task-review-sess_158b9d0e-4038-45be-b1bc-9bb90b111317.json",
-    "history_summary": ".mimosa/history/run-20260916T165122056Z-27676-18695bd1340e.json"
+    "history_summary": ".mimosa/history/run-20260916T163607860Z-13740-bfd9b71e1e3f.json"
   }
 }
