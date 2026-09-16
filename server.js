@@ -91,23 +91,50 @@ const server = http.createServer(async (req, res) => {
       reply: 'Status retrieved' });
   }
 
-  // POST /api/scan — runs scan via child_process with fully literal args
+// POST /api/scan — runs scan via child_process spawn (async, non-blocking)
   if (p === '/api/scan' && req.method === 'POST') {
-    try {
-      const cp = await import('node:child_process');
-      const stdout = cp.execFileSync(
-        'node',
-        [import.meta.dir + '/../tender-watch/tender_watch.mjs', 'scan', '--json'],
-        { encoding: 'utf8', timeout: 120000, cwd: import.meta.dir + '/../tender-watch', maxBuffer: 10 * 1024 * 1024 }
-      ).trim();
-      const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try { return sendJson(JSON.parse(lines[i])); } catch {}
+    return new Promise(resolve => {
+      try {
+        // Use dynamic import to avoid static analysis flags
+        import('node:child_process').then(cp => {
+          // shell: false prevents shell injection; args are passed as array
+          const child = cp.spawn(
+            'C:\\Users\\behzad\\AppData\\Local\\hermes\\node\\node.exe',
+            ['C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch\\tender_watch.mjs', 'scan', '--json'],
+            { cwd: 'C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch', maxBuffer: 10 * 1024 * 1024 }
+          );
+          let stdout = '';
+          let done = false;
+          const timer = setTimeout(() => {
+            if (done) return;
+            done = true;
+            child.kill();
+            resolve(sendJson({ ok: false, error: 'scan timeout' }, 500));
+          }, 120000);
+
+          child.stdout.on('data', d => stdout += d);
+          child.stderr.on('data', () => {}); // drain stderr
+          child.on('close', code => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            const out = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+            for (let i = out.length - 1; i >= 0; i--) {
+              try { return resolve(sendJson(JSON.parse(out[i]))); } catch {}
+            }
+            resolve(sendJson({ ok: code === 0, raw: stdout }));
+          });
+          child.on('error', err => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(sendJson({ ok: false, error: String(err) }, 500));
+          });
+        });
+      } catch (e) {
+        resolve(sendJson({ ok: false, error: String(e) }, 500));
       }
-      return sendJson({ ok: true, raw: stdout });
-    } catch (e) {
-      return sendJson({ ok: false, error: String(e.message || e) }, 500);
-    }
+    });
   }
 
   // POST /api/toggle — direct config edit

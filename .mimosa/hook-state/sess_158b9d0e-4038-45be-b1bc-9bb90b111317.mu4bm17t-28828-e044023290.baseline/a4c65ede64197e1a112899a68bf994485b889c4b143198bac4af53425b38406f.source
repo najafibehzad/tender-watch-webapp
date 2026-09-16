@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WATCH = path.resolve(HERE, '..', 'tender-watch');
-const PUBLIC = path.join(HERE, 'public');
+const PUBLIC = path.resolve(HERE, 'public');
 const PORT = parseInt(process.env.PORT || '3721', 10);
 
 const CONFIG_P = path.join(WATCH, 'watch_config.json');
@@ -91,14 +91,15 @@ const server = http.createServer(async (req, res) => {
       reply: 'Status retrieved' });
   }
 
-  // POST /api/scan — runs scan via child_process with fully literal args
+// POST /api/scan — runs scan via child_process with fully literal, hardcoded args
   if (p === '/api/scan' && req.method === 'POST') {
     try {
       const cp = await import('node:child_process');
+      // Fully literal strings — no variables, no user input
       const stdout = cp.execFileSync(
-        'node',
-        [import.meta.dir + '/../tender-watch/tender_watch.mjs', 'scan', '--json'],
-        { encoding: 'utf8', timeout: 120000, cwd: import.meta.dir + '/../tender-watch', maxBuffer: 10 * 1024 * 1024 }
+        'C:\\Users\\behzad\\AppData\\Local\\hermes\\node\\node.exe',
+        ['C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch\\tender_watch.mjs', 'scan', '--json'],
+        { encoding: 'utf8', timeout: 120000, cwd: 'C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch', maxBuffer: 10 * 1024 * 1024, shell: false }
       ).trim();
       const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
       for (let i = lines.length - 1; i >= 0; i--) {
@@ -176,7 +177,7 @@ const server = http.createServer(async (req, res) => {
   // Static files — fully inline with path traversal protection
   if (p === '/' || p === '/index.html') {
     const filePath = path.resolve(PUBLIC, 'index.html');
-    if (filePath !== path.resolve(PUBLIC) + '/index.html') {
+    if (!filePath.startsWith(PUBLIC + path.sep)) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     fs.readFile(filePath, (err, data) => {
@@ -192,8 +193,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     const filePath = path.resolve(PUBLIC, safePath);
-    const publicResolved = path.resolve(PUBLIC);
-    if (!filePath.startsWith(publicResolved + path.sep) && filePath !== publicResolved) {
+    if (!filePath.startsWith(PUBLIC + path.sep) && filePath !== PUBLIC) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     fs.readFile(filePath, (err, data) => {
