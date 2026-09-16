@@ -736,15 +736,17 @@ async function addTopic() {
       if (data.ok) {
         toast('PDF آماده شد — ' + (data.pdfCount || 0) + ' مناقصه');
         if (data.pdfFileDesktop) {
-          toast('کپی شد به: ' + data.pdfFileDesktop);
-          // Try to open the desktop PDF
+          toast('کپی شد به دسکتاپ');
+          // Auto-open the PDF using fetch + blob (works in modern browsers)
           try {
-            const a = document.createElement('a');
-            a.href = 'file:///' + data.pdfFileDesktop.replace(/\\/g, '/');
-            a.download = data.pdfFileDesktop.split('\\').pop();
-            a.target = '_blank';
-            a.click();
-          } catch (e) {}
+            const resp = await fetch('file:///' + data.pdfFileDesktop.replace(/\\/g, '/'));
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+          } catch (e) {
+            // Fallback: try direct file open
+            try { window.open('file:///' + data.pdfFileDesktop.replace(/\\/g, '/'), '_blank'); } catch (e2) {}
+          }
         }
         await loadStatus();
       } else {

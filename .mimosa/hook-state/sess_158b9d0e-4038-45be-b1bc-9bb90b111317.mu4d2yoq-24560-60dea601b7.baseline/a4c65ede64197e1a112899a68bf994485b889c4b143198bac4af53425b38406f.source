@@ -154,7 +154,7 @@ const server = http.createServer(async (req, res) => {
             done = true;
             child.kill();
             resolve(sendJson({ ok: false, error: 'زمان تمام شد — دوباره امتحان کنید' }, 500));
-          }, 180000); // PDF takes longer — 3 min timeout
+          }, 180000);
 
           child.stdout.on('data', d => stdout += d);
           child.stderr.on('data', () => {});
@@ -164,7 +164,22 @@ const server = http.createServer(async (req, res) => {
             clearTimeout(timer);
             const out = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
             for (let i = out.length - 1; i >= 0; i--) {
-              try { return resolve(sendJson(JSON.parse(out[i]))); } catch {}
+              try {
+                const result = JSON.parse(out[i]);
+                // Copy PDF to desktop if generated
+                if (result.ok && result.pdfFile) {
+                  try {
+                    const desktopPath = 'C:\\Users\\behzad\\Desktop';
+                    const fileName = path.basename(result.pdfFile);
+                    const destPath = path.join(desktopPath, fileName);
+                    fs.copyFileSync(result.pdfFile, destPath);
+                    result.pdfFileDesktop = destPath;
+                  } catch (copyErr) {
+                    // Non-fatal — PDF still available at original path
+                  }
+                }
+                return resolve(sendJson(result));
+              } catch {}
             }
             resolve(sendJson({ ok: code === 0, raw: stdout }));
           });

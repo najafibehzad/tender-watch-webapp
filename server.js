@@ -174,6 +174,11 @@ const server = http.createServer(async (req, res) => {
                     const destPath = path.join(desktopPath, fileName);
                     fs.copyFileSync(result.pdfFile, destPath);
                     result.pdfFileDesktop = destPath;
+                    // Auto-open the PDF on desktop
+                    try {
+                      const { execFileSync } = await import('node:child_process');
+                      execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
+                    } catch (openErr) { /* non-fatal */ }
                   } catch (copyErr) {
                     // Non-fatal — PDF still available at original path
                   }
