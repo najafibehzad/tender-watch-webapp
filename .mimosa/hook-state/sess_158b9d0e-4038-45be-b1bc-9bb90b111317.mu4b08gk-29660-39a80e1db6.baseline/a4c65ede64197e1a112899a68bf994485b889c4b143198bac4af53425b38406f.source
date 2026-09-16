@@ -173,25 +173,40 @@ const server = http.createServer(async (req, res) => {
     return sendJson(readConfig());
   }
 
-  // Static files
+  // Static files — fully inline with path traversal protection
   if (p === '/' || p === '/index.html') {
-    return serveFile(path.join(PUBLIC, 'index.html'), res);
+    const filePath = path.resolve(PUBLIC, 'index.html');
+    if (filePath !== path.resolve(PUBLIC) + '/index.html') {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+    fs.readFile(filePath, (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(data);
+    });
+    return;
   }
   if (p.startsWith('/static/')) {
-    return serveFile(path.join(PUBLIC, p), res);
+    const safePath = path.normalize(p).replace(/^\.\.\//g, '');
+    if (safePath.includes('..')) {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+    const filePath = path.resolve(PUBLIC, safePath);
+    const publicResolved = path.resolve(PUBLIC);
+    if (!filePath.startsWith(publicResolved + path.sep) && filePath !== publicResolved) {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+    fs.readFile(filePath, (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'text/plain' });
+      res.end(data);
+    });
+    return;
   }
 
   res.writeHead(404);
   res.end('Not found');
 });
-
-function serveFile(filePath, res) {
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'text/plain' });
-    res.end(data);
-  });
-}
 
 server.listen(PORT, () => {
   console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${PORT} آماده است`);

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WATCH = path.resolve(HERE, '..', 'tender-watch');
-const PUBLIC = path.join(HERE, 'public');
+const PUBLIC = path.resolve(HERE, 'public');
 const PORT = parseInt(process.env.PORT || '3721', 10);
 
 const CONFIG_P = path.join(WATCH, 'watch_config.json');
@@ -176,7 +176,7 @@ const server = http.createServer(async (req, res) => {
   // Static files — fully inline with path traversal protection
   if (p === '/' || p === '/index.html') {
     const filePath = path.resolve(PUBLIC, 'index.html');
-    if (filePath !== path.resolve(PUBLIC) + '/index.html') {
+    if (!filePath.startsWith(PUBLIC + path.sep)) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     fs.readFile(filePath, (err, data) => {
@@ -192,8 +192,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     const filePath = path.resolve(PUBLIC, safePath);
-    const publicResolved = path.resolve(PUBLIC);
-    if (!filePath.startsWith(publicResolved + path.sep) && filePath !== publicResolved) {
+    if (!filePath.startsWith(PUBLIC + path.sep) && filePath !== PUBLIC) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     fs.readFile(filePath, (err, data) => {
