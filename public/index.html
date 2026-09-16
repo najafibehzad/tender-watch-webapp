@@ -735,13 +735,16 @@ async function addTopic() {
       const data = await apiPost('/pdf', {});
       if (data.ok) {
         toast('PDF آماده شد — ' + (data.pdfCount || 0) + ' مناقصه');
-        if (data.pdfFile) {
-          // Open the PDF file
-          const a = document.createElement('a');
-          a.href = 'file:///' + data.pdfFile.replace(/\\/g, '/');
-          a.download = data.pdfFile.split('/').pop();
-          a.target = '_blank';
-          a.click();
+        if (data.pdfFileDesktop) {
+          toast('کپی شد به: ' + data.pdfFileDesktop);
+          // Try to open the desktop PDF
+          try {
+            const a = document.createElement('a');
+            a.href = 'file:///' + data.pdfFileDesktop.replace(/\\/g, '/');
+            a.download = data.pdfFileDesktop.split('\\').pop();
+            a.target = '_blank';
+            a.click();
+          } catch (e) {}
         }
         await loadStatus();
       } else {

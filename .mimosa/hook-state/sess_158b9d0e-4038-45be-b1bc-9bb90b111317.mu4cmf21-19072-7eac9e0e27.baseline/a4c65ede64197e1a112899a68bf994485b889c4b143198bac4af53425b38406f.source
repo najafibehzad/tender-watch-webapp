@@ -153,7 +153,7 @@ const server = http.createServer(async (req, res) => {
             if (done) return;
             done = true;
             child.kill();
-            resolve(sendJson({ ok: false, error: 'pdf timeout' }, 500));
+            resolve(sendJson({ ok: false, error: 'زمان تمام شد — دوباره امتحان کنید' }, 500));
           }, 180000); // PDF takes longer — 3 min timeout
 
           child.stdout.on('data', d => stdout += d);
