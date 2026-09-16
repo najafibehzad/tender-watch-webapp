@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>دیده‌بان مناقصات ستاد</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg2: #1a2028;
+    --bg3: #242d3a;
+    --card: #1e2733;
+    --card2: #283444;
+    --border: #2d3a4d;
+    --text: #e8eef5;
+    --text2: #94a3b8;
+    --text3: #6b7a8d;
+    --accent: #00d4aa;
+    --accent2: #00b894;
+    --accent3: #00cec9;
+    --red: #ff4757;
+    --red2: #c0392b;
+    --orange: #ffa502;
+    --yellow: #ffd93d;
+    --blue: #4dabf7;
+    --purple: #b197fc;
+    --shadow: 0 4px 24px rgba(0,0,0,0.3);
+    --shadow2: 0 8px 40px rgba(0,0,0,0.4);
+    --radius: 16px;
+    --radius2: 12px;
+    --radius3: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Vazirmatn', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.7;
+    direction: rtl;
+  }
+
+  /* Background animated gradient */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(0,212,170,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(0,184,148,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(77,171,247,0.04) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding: 24px 28px;
+    background: linear-gradient(135deg, var(--card) 0%, var(--card2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+
+  .logo {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 4px 20px rgba(0,212,170,0.3);
+  }
+
+  .header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .header .sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+
+  .header-right { display: flex; align-items: center; gap: 12px; }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    background: rgba(0,212,170,0.1);
+    border: 1px solid rgba(0,212,170,0.3);
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* Stats row */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: linear-gradient(135deg, var(--card) 0%, var(--card2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+
+  .stat-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .stat-icon.cities { background: rgba(77,171,247,0.15); }
+  .stat-icon.topics { background: rgba(177,151,252,0.15); }
+  .stat-icon.seen { background: rgba(0,212,170,0.15); }
+  .stat-icon.scan { background: rgba(255,165,2,0.15); }
+
+  .stat-value { font-size: 26px; font-weight: 800; line-height: 1.2; }
+  .stat-label { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  /* Main grid */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 28px;
+  }
+
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: linear-gradient(135deg, var(--card) 0%, var(--card2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-header h2 .ico { font-size: 18px; }
+
+  .panel-body { padding: 18px 22px; }
+
+  /* City/Topic lists */
+  .item-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius3);
+    transition: all 0.2s;
+  }
+
+  .item:hover { border-color: var(--accent); }
+
+  .item-left { display: flex; align-items: center; gap: 12px; }
+
+  .item-name { font-weight: 600; font-size: 14px; }
+  .item-detail { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .toggle {
+    position: relative;
+    width: 48px; height: 26px;
+    background: var(--border);
+    border-radius: 30px;
+    cursor: pointer;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 20px; height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+  }
+  .toggle.on::after { transform: translateX(-22px); }
+
+  .item.disabled { opacity: 0.5; }
+
+  /* Forms */
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 6px;
+  }
+  .form-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius3);
+    color: var(--text);
+    font-family: 'Vazirmatn', sans-serif;
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .form-row { display: flex; gap: 10px; }
+  .form-row .form-group { flex: 1; }
+
+  .checkbox-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .checkbox-group input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  /* Buttons */
+  .btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: var(--radius3);
+    font-family: 'Vazirmatn', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0f1419;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
+
+  .btn-secondary {
+    background: var(--bg3);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--accent); }
+
+  .btn-danger {
+    background: rgba(255,71,87,0.15);
+    color: var(--red);
+    border: 1px solid rgba(255,71,87,0.3);
+  }
+  .btn-danger:hover { background: rgba(255,71,87,0.25); }
+
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Scan section */
+  .scan-section {
+    margin-bottom: 28px;
+  }
+
+  .scan-card {
+    background: linear-gradient(135deg, var(--card) 0%, var(--card2) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .scan-info h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .scan-info p { font-size: 13px; color: var(--text2); }
+
+  .scan-btn {
+    padding: 14px 32px;
+    font-size: 16px;
+    border-radius: 30px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--card2);
+    border: 1px solid var(--accent);
+    border-radius: 30px;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 1000;
+    transition: transform 0.3s;
+    box-shadow: var(--shadow2);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.error { border-color: var(--red); }
+
+  /* Loading */
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Last scan */
+  .last-scan {
+    font-size: 12px;
+    color: var(--text3);
+    margin-top: 8px;
+  }
+
+  .last-scan strong { color: var(--accent); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .app { padding: 12px; }
+    .header { padding: 16px; }
+    .header h1 { font-size: 18px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .panel-body { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">🔍</div>
+      <div>
+        <h1>دیده‌بان مناقصات ستاد</h1>
+        <div class="sub">پایش خودکار آگهی‌های تدارکات دولتی</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span id="systemStatus">-active</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-icon cities">🏙</div>
+      <div>
+        <div class="stat-value" id="statCities">--</div>
+        <div class="stat-label">شهر فعال</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon topics">📋</div>
+      <div>
+        <div class="stat-value" id="statTopics">--</div>
+        <div class="stat-label"> موضوع فعال</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon seen">👁</div>
+      <div>
+        <div class="stat-value" id="statSeen">--</div>
+        <div class="stat-label">آگهی دیده‌شده</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon scan">⚡</div>
+      <div>
+        <div class="stat-value" id="statNew">--</div>
+        <div class="stat-label">جدیدترین اسکن</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scan section -->
+  <section class="scan-section">
+    <div class="scan-card">
+      <div class="scan-info">
+        <h3>اسکن دستی مناقصات</h3>
+        <p> تمام شهرهای فعال را در چند ثانیه اسکن می‌کند و آگهی‌های جدید را گزارش می‌دهد</p>
+        <div class="last-scan" id="lastScanInfo">در حال بارگذاری...</div>
+      </div>
+      <button class="btn btn-primary scan-btn" id="scanBtn" onclick="doScan()">
+        🚀 اسکن فوری
+      </button>
+    </div>
+  </section>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+    <!-- Cities panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2><span class="ico">🏙</span> شهرها و شهرستان‌ها</h2>
+        <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px;" onclick="showAddCity()">+ افزودن شهر</button>
+      </div>
+      <div class="panel-body">
+        <div class="item-list" id="citiesList"></div>
+        <div id="addCityForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
+          <div class="form-row">
+            <div class="form-group">
+              <label>نام شهر</label>
+              <input class="form-input" id="newCityName" placeholder="مثلاً ساری">
+            </div>
+            <div class="form-group">
+              <label>استان</label>
+              <input class="form-input" id="newCityProvince" placeholder="مثلاً تهران">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-primary" onclick="addCity()">ذخیره</button>
+            <button class="btn btn-secondary" onclick="hideAddCity()">lift</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Topics panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2><span class="ico">📋</span> موضوعات پایش</h2>
+        <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px;" onclick="showAddTopic()">+ افزودن موضوع</button>
+      </div>
+      <div class="panel-body">
+        <div class="item-list" id="topicsList"></div>
+        <div id="addTopicForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
+          <div class="form-group">
+            <label>نام موضوع</label>
+            <input class="form-input" id="newTopicName" placeholder="مثلاً لوله‌کشی">
+          </div>
+          <div class="form-group">
+            <label>کلیدواژه‌ها (با , جدا کنید)</label>
+            <input class="form-input" id="newTopicKeywords" placeholder="مثلاً لوله,آب,کانال">
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="newTopicPark">
+            <label for="newTopicPark">فقط با پارک/فضای سبز</label>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;">
+            <button class="btn btn-primary" onclick="addTopic()">ذخیره</button>
+            <button class="btn btn-secondary" onclick="hideAddTopic()">lift</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+
+let currentConfig = null;
+
+// Toast
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+// API helpers
+async function apiGet(path) {
+  const r = await fetch(API + path);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+// Format Persian date
+function formatFaDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Load data
+async function loadStatus() {
+  try {
+    const data = await apiGet('/status');
+    currentConfig = data.config;
+    const st = data.state;
+
+    // Stats
+    const cities = currentConfig?.districts || [];
+    const activeCities = cities.filter(c => !c._disabled);
+    const topics = currentConfig?.topics || {};
+    const activeTopics = Object.keys(topics).filter(t => !topics[t]._disabled);
+
+    document.getElementById('statCities').textContent = activeCities.length;
+    document.getElementById('statTopics').textContent = activeTopics.length;
+    document.getElementById('statSeen').textContent = st?.seenCount || 0;
+    document.getElementById('statNew').textContent = data.lastScan ? formatFaDate(data.lastScan) : '—';
+
+    // Last scan info
+    document.getElementById('lastScanInfo').innerHTML =
+      ` آخرین اسکن: <strong>${data.lastScan ? formatFaDate(data.lastScan) : '—'}</strong>`;
+
+    // Render cities
+    renderCities(cities);
+    // Render topics
+    renderTopics(topics);
+
+    // System status
+    document.getElementById('systemStatus').textContent = data.ok ? 'active' : 'error';
+  } catch (e) {
+    toast('خطا در دریافت اطلاعات', true);
+  }
+}
+
+// Render cities
+function renderCities(cities) {
+  const list = document.getElementById('citiesList');
+  if (!cities || cities.length === 0) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:13px;">شهری اضافه نشده</div>';
+    return;
+  }
+  list.innerHTML = cities.map(c => `
+    <div class="item ${c._disabled ? 'disabled' : ''}">
+      <div class="item-left">
+        <div>
+          <div class="item-name">${escHtml(c.name)}</div>
+          <div class="item-detail">${escHtml(c.province || '')} ${c.id ? '· کد: ' + c.id : ''}</div>
+        </div>
+      </div>
+      <div class="toggle ${c._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(c.name)}', 'city')"></div>
+    </div>
+  `).join('');
+}
+
+// Render topics
+function renderTopics(topics) {
+  const list = document.getElementById('topicsList');
+  if (!topics || Object.keys(topics).length === 0) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:13px;">موضوعی اضافه نشده</div>';
+    return;
+  }
+  list.innerHTML = Object.entries(topics).map(([name, kw]) => {
+    const kws = Array.isArray(kw) ? kw.join(', ') : kw;
+    return `
+    <div class="item ${kw._disabled ? 'disabled' : ''}">
+      <div class="item-left">
+        <div>
+          <div class="item-name">${escHtml(name)}</div>
+          <div class="item-detail">${escHtml(kws)}${kw._disabled ? ' · خاموش' : ''}</div>
+        </div>
+      </div>
+      <div class="toggle ${kw._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(name)}', 'topic')"></div>
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escJs(s) {
+  return String(s).replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\\/g,'\\\\');
+}
+
+// Toggle
+async function toggleItem(name, type) {
+  try {
+    const data = await apiPost('/toggle', { name });
+    if (data.ok) {
+      toast(data.reply);
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
+}
+
+// Add city
+function showAddCity() {
+  document.getElementById('addCityForm').style.display = 'block';
+  document.getElementById('newCityName').focus();
+}
+function hideAddCity() {
+  document.getElementById('addCityForm').style.display = 'none';
+  document.getElementById('newCityName').value = '';
+  document.getElementById('newCityProvince').value = '';
+}
+async function addCity() {
+  const name = document.getElementById('newCityName').value.trim();
+  const province = document.getElementById('newCityProvince').value.trim();
+  if (!name) { toast('نام شهر را وارد کنید', true); return; }
+  try {
+    const data = await apiPost('/add-city', { city: name, province });
+    if (data.ok) {
+      toast(data.reply);
+      hideAddCity();
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
+}
+
+// Add topic
+function showAddTopic() {
+  document.getElementById('addTopicForm').style.display = 'block';
+  document.getElementById('newTopicName').focus();
+}
+function hideAddTopic() {
+  document.getElementById('addTopicForm').style.display = 'none';
+  document.getElementById('newTopicName').value = '';
+  document.getElementById('newTopicKeywords').value = '';
+  document.getElementById('newTopicPark').checked = false;
+}
+async function addTopic() {
+  const name = document.getElementById('newTopicName').value.trim();
+  const keywords = document.getElementById('newTopicKeywords').value.trim();
+  const park = document.getElementById('newTopicPark').checked;
+  if (!name) { toast('نام موضوع را وارد کنید', true); return; }
+  if (!keywords) { toast('کلیدواژه‌ها را وارد کنید', true); return; }
+  try {
+    const data = await apiPost('/add-topic', { name, keywords, park });
+    if (data.ok) {
+      toast(data.reply);
+      hideAddTopic();
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
+}
+
+// Scan
+async function doScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
+  try {
+    const data = await apiPost('/scan', {});
+    if (data.ok) {
+      toast(data.reply || 'اسکن کامل شد');
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا در اسکن', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🚀 اسکن فوری';
+  }
+}
+
+// Init
+loadStatus();
+setInterval(loadStatus, 30000); // refresh every 30s
+</script>
+</body>
+</html>

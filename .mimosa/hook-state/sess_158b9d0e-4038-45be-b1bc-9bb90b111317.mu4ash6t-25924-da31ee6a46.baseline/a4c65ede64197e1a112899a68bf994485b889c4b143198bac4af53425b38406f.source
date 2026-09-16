@@ -1,0 +1,207 @@
+#!/usr/bin/env node
+// سرور وب اپ دیده‌بان مناقصات — رابط گرافیکی برای مدیریت پایش مناقصات ستاد
+// اجرا: node server.js  →  http://localhost:3721
+
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const WATCH = path.resolve(HERE, '..', 'tender-watch');
+const PUBLIC = path.join(HERE, 'public');
+const PORT = parseInt(process.env.PORT || '3721', 10);
+
+const CONFIG_P = path.join(WATCH, 'watch_config.json');
+const STATE_P = path.join(WATCH, 'watch_state.json');
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+};
+
+// ---- Direct JSON access (no child_process at all) ----
+function readJson(p, def) {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return def; }
+}
+function writeJson(p, obj) {
+  const t = p + '.tmp';
+  fs.writeFileSync(t, JSON.stringify(obj, null, 2), 'utf8');
+  fs.renameSync(t, p);
+}
+function readConfig() { return readJson(CONFIG_P, null); }
+function readState() {
+  const st = readJson(STATE_P, null);
+  if (st) st.seenCount = Object.keys(st.seen || {}).length;
+  return st;
+}
+
+// ---- Input validation (Persian text only) ----
+// Check: non-empty, max 80 chars, only Persian letters/spaces/ZWNJ/digits
+function isPersianName(s) {
+  if (typeof s !== 'string' || s.length === 0 || s.length > 80) return false;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    // Persian/Arabic range, Persian digits, space, ZWNJ, hyphen
+    if (!(c >= 0x0600 && c <= 0x06FF) && !(c >= 0x06F0 && c <= 0x06F9) &&
+        c !== 0x20 && c !== 0x200C && c !== 0x2D) return false;
+  }
+  return true;
+}
+function isPersianKeywords(s) {
+  if (typeof s !== 'string' || s.length === 0 || s.length > 200) return false;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (!(c >= 0x0600 && c <= 0x06FF) && !(c >= 0x06F0 && c <= 0x06F9) &&
+        c !== 0x20 && c !== 0x200C && c !== 0x2D && c !== 0x2C) return false;
+  }
+  return true;
+}
+const validName = isPersianName;
+const validKw = isPersianKeywords;
+
+// ---- HTTP server ----
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const p = url.pathname;
+
+  const sendJson = (data, status = 200) => {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
+  };
+
+  const readBody = () => new Promise(resolve => {
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      try { resolve(JSON.parse(raw)); } catch { resolve({}); }
+    });
+  });
+
+  // GET /api/status
+  if (p === '/api/status' && req.method === 'GET') {
+    const cfg = readConfig();
+    const st = readState();
+    return sendJson({ ok: true, config: cfg, state: st,
+      reply: 'Status retrieved' });
+  }
+
+  // POST /api/scan — runs scan via child_process with fully literal args
+  if (p === '/api/scan' && req.method === 'POST') {
+    try {
+      const cp = await import('node:child_process');
+      const stdout = cp.execFileSync(
+        'node',
+        [import.meta.dir + '/../tender-watch/tender_watch.mjs', 'scan', '--json'],
+        { encoding: 'utf8', timeout: 120000, cwd: import.meta.dir + '/../tender-watch', maxBuffer: 10 * 1024 * 1024 }
+      ).trim();
+      const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try { return sendJson(JSON.parse(lines[i])); } catch {}
+      }
+      return sendJson({ ok: true, raw: stdout });
+    } catch (e) {
+      return sendJson({ ok: false, error: String(e.message || e) }, 500);
+    }
+  }
+
+  // POST /api/toggle — direct config edit
+  if (p === '/api/toggle' && req.method === 'POST') {
+    const { name } = await readBody();
+    if (!validName(name)) return sendJson({ ok: false, error: 'نام نامعتبر' }, 400);
+    const cfg = readConfig();
+    if (!cfg) return sendJson({ ok: false, error: 'config not found' }, 500);
+
+    const ci = cfg.districts?.find(d => d.name === name);
+    if (ci) {
+      ci._disabled = !ci._disabled;
+      writeJson(CONFIG_P, cfg);
+      return sendJson({ ok: true, on: !ci._disabled,
+        reply: `${name} ${!ci._disabled ? 'روشن' : 'vimosh'} شد` });
+    }
+    if (cfg.topics && cfg.topics[name] !== undefined) {
+      cfg.topics[name]._disabled = !cfg.topics[name]._disabled;
+      writeJson(CONFIG_P, cfg);
+      return sendJson({ ok: true, on: !cfg.topics[name]._disabled,
+        reply: `topic ${name} ${!cfg.topics[name]._disabled ? 'on' : 'off'}` });
+    }
+    return sendJson({ ok: false, error: 'not found' }, 404);
+  }
+
+  // POST /api/add-city — direct config edit
+  if (p === '/api/add-city' && req.method === 'POST') {
+    const { city, province } = await readBody();
+    if (!validName(city)) return sendJson({ ok: false, error: 'نام شهر نامعتبر' }, 400);
+    const cfg = readConfig();
+    if (!cfg) return sendJson({ ok: false, error: 'config not found' }, 500);
+    if (cfg.districts?.some(d => d.name === city)) {
+      return sendJson({ ok: false, error: 'شهر قبلاً وجود دارد' }, 400);
+    }
+    cfg.districts.push({ name: city, id: '0', province: province || 'نام未知' });
+    writeJson(CONFIG_P, cfg);
+    return sendJson({ ok: true, reply: `${city} اضافه شد` });
+  }
+
+  // POST /api/add-topic — direct config edit
+  if (p === '/api/add-topic' && req.method === 'POST') {
+    const { name, keywords, park } = await readBody();
+    if (!validName(name)) return sendJson({ ok: false, error: 'نام موضوع نامعتبر' }, 400);
+    if (!validKw(keywords)) return sendJson({ ok: false, error: 'کلیدواژه نامعتبر' }, 400);
+    const cfg = readConfig();
+    if (!cfg) return sendJson({ ok: false, error: 'config not found' }, 500);
+    if (cfg.topics && cfg.topics[name] !== undefined) {
+      return sendJson({ ok: false, error: 'topic already exists' }, 400);
+    }
+    if (!cfg.topics) cfg.topics = {};
+    cfg.topics[name] = keywords.split(',').map(k => k.trim()).filter(Boolean);
+    if (park) {
+      if (!cfg.parkTopics) cfg.parkTopics = [];
+      cfg.parkTopics.push(name);
+      if (!cfg.parkRegex) cfg.parkRegex = '(پارک|بوستان|فضای سبز|محوطه سبز|گلستان)';
+    }
+    writeJson(CONFIG_P, cfg);
+    return sendJson({ ok: true, reply: `topic ${name} اضافه شد` });
+  }
+
+  // GET /api/config
+  if (p === '/api/config' && req.method === 'GET') {
+    return sendJson(readConfig());
+  }
+
+  // Static files
+  if (p === '/' || p === '/index.html') {
+    return serveFile(path.join(PUBLIC, 'index.html'), res);
+  }
+  if (p.startsWith('/static/')) {
+    return serveFile(path.join(PUBLIC, p), res);
+  }
+
+  res.writeHead(404);
+  res.end('Not found');
+});
+
+function serveFile(filePath, res) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) { res.writeHead(404); res.end('Not found'); return; }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'text/plain' });
+    res.end(data);
+  });
+}
+
+server.listen(PORT, () => {
+  console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${PORT} آماده است`);
+  console.log(`   http://localhost:${PORT}`);
+});
+
+// Prevent crash on unhandled errors
+process.on('uncaughtException', err => {
+  console.error('Uncaught:', err.message);
+});
+process.on('unhandledRejection', err => {
+  console.error('Unhandled rejection:', err);
+});

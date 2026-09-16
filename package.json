@@ -1,0 +1,1 @@
+{"name": "tender-watch-webapp", "version": "1.0.0", "description": "دیده‌بان مناقصات ستاد - وب اپ گرافیکی برای مدیریت پایش مناقصات", "type": "module", "main": "server.js", "scripts": {"start": "node server.js"}, "engines": {"node": ">=18"}}
