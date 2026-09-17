@@ -19,7 +19,7 @@ const WATCH = path.resolve(HERE, '..', 'tender-watch');
 const PUBLIC = path.resolve(HERE, 'public');
 const NODE_BIN = process.execPath;
 const WATCH_SCRIPT = path.join(WATCH, 'tender_watch.mjs');
-const PORT = parseInt(process.env.PORT || '3725', 10);
+let PORT = parseInt(process.env.PORT || '3725', 10);
 
 const CONFIG_P = path.join(WATCH, 'watch_config.json');
 const STATE_P = path.join(WATCH, 'watch_state.json');
@@ -185,8 +185,8 @@ function readBody(req, limit = 1 << 20) {
   });
 }
 
-// ---- HTTP server ----
-const server = http.createServer(async (req, res) => {
+// ---- HTTP request handler (created fresh per port attempt) ----
+async function handleRequest(req, res) {
   // Reject anything that isn't GET/POST quickly
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -328,19 +328,49 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404);
   res.end('Not found');
-});
+}
 
 // Keep the server responsive: don't let one slow client block others
-server.keepAliveTimeout = 5000;
-server.headersTimeout = 6000;
-server.maxRequestsPerSocket = 1000;
-server.timeout = 30000;
+function makeServer() {
+  const s = http.createServer(handleRequest);
+  s.keepAliveTimeout = 5000;
+  s.headersTimeout = 6000;
+  s.maxRequestsPerSocket = 1000;
+  s.timeout = 30000;
+  return s;
+}
 
-server.listen(PORT, () => {
-  console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${PORT} آماده است`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
-});
+// پورت‌گاه: اگه پورت پیش‌уй اشغال بود (یه سرور قدیمی از همین اپ باقی مونده)،
+// پیام شفاف می‌دهیم و یه سری پورت بعدی رو هم امتحان می‌کنیم تا اپ از اول نیفته.
+function startServer(firstPort) {
+  let port = firstPort;
+  const tryListen = () => {
+    const server = makeServer();
+    server.once('error', err => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`⚠️ پورت ${port} اشغال است — احتمالاً یه نسخهٔ قدیمی از همین اپ روی این پورت اجرا می‌کنه.`);
+        console.error(`   برای پاک کردن: PowerShell → Get-NetTCPConnection -LocalPort ${port} | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`);
+        port++;
+        if (port > firstPort + 3) {
+          console.error('❌ هیچ پورتی باز نشد');
+          process.exit(1);
+        }
+        tryListen();
+      } else {
+        console.error('❌ خطای سرور:', err.message);
+        process.exit(1);
+      }
+    });
+    server.listen(port, () => {
+      PORT = port;
+      console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${port} آماده است`);
+      console.log(`   http://localhost:${port}`);
+      console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
+    });
+  };
+  tryListen();
+}
+startServer(PORT);
 
 process.on('uncaughtException', err => console.error('Uncaught:', err.message));
 process.on('unhandledRejection', err => console.error('Unhandled rejection:', err.message));
