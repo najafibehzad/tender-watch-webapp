@@ -144,8 +144,11 @@ function formatFaDateSR(iso) {
 }
 
 // ---- Input validation (Persian-only) ----
+// نام باید فقط حروف فارسی/فارسی-عدد داشته باشد و با «-» شروع نشود
+// (جلوگیری از اینکه کاربر یه آرگومانِ جدید به جای نام شهر بفرسته)
 function isPersianName(s) {
   if (typeof s !== 'string' || s.length === 0 || s.length > 80) return false;
+  if (s.trimStart().startsWith('-')) return false;
   for (const ch of s) {
     const c = ch.codePointAt(0);
     if (!(c >= 0x0600 && c <= 0x06FF) && !(c >= 0x06F0 && c <= 0x06F9) &&
@@ -367,6 +370,27 @@ async function handleRequest(req, res) {
   // GET /api/config
   if (p === '/api/config' && req.method === 'GET') {
     return sendJson(res, readConfig());
+  }
+
+  // GET /api/summary — ساختاریافته: لیست آگهی‌های جدید + شهرستان‌ها + متن خبر
+  if (p === '/api/summary' && req.method === 'GET') {
+    const cfg = readConfig();
+    const st = readState();
+    const d = scanCache.data;
+    return sendJson(res, {
+      ok: true,
+      lastScan: lastScanAt,
+      lastScanError,
+      scanCached: !!scanCache.data && (Date.now() - scanCache.ts) < CACHE_TTL,
+      scanRunning,
+      newCount: d ? d.newCount : 0,
+      byCity: d ? d.byCity : null,
+      items: d ? d.items : null,
+      failed: d ? d.failed : null,
+      message: d ? d.message : null,
+      activeCities: (cfg?.districts || []).filter(c => !c._disabled).length,
+      seenCount: st?.seenCount || 0,
+    });
   }
 
   // POST /api/scan — returns IMMEDIATELY; scan runs in background, client polls /api/status

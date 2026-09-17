@@ -57,7 +57,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 16px;
-    margin-bottom: 32px;
+    margin-bottom: 28px;
     padding: 24px 28px;
     background: linear-gradient(135deg, var(--card) 0%, var(--card2) 100%);
     border: 1px solid var(--border);
@@ -274,6 +274,37 @@
   .scan-result.show { display: block; }
   .scan-result.error { border-right-color: var(--red); color: #ff9a9a; }
 
+  /* پنل آگهی‌های جدید */
+  .new-panel { margin-bottom: 28px; }
+  .new-panel .panel-body { display: flex; flex-direction: column; gap: 14px; }
+  .new-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .new-chip {
+    font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 20px;
+    background: rgba(0,212,170,0.12); color: var(--accent);
+    border: 1px solid rgba(0,212,170,0.25);
+  }
+  .new-chip.zero { background: rgba(255,71,87,0.12); color: #ff6b7a; border-color: rgba(255,71,87,0.25); }
+  .new-empty { color: var(--text3); font-size: 13px; padding: 8px 0; }
+  .new-list { display: flex; flex-direction: column; gap: 8px; max-height: 560px; overflow: auto; }
+  .new-item {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 12px 14px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius3);
+    border-right: 3px solid var(--accent);
+  }
+  .new-item .ni-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .new-item .ni-no { font-size: 11px; color: var(--text3); }
+  .new-item .ni-tag { font-size: 11px; color: var(--accent); background: rgba(0,212,170,0.1); padding: 2px 8px; border-radius: 10px; }
+  .new-item .ni-title { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  .new-item .ni-meta { font-size: 11px; color: var(--text2); }
+  .new-item .ni-meta b { color: var(--text); }
+  .new-item a { font-size: 12px; color: var(--accent); text-decoration: none; }
+  .new-item a:hover { text-decoration: underline; }
+  .new-item.error { border-right-color: var(--red); }
+
   .toast {
     position: fixed;
     bottom: 24px;
@@ -359,6 +390,7 @@
   .report-result a { color: var(--accent); text-decoration: none; }
   .report-result a:hover { text-decoration: underline; }
   .report-running { display: flex; align-items: center; gap: 10px; color: #ffa502; }
+</style>
 </head>
 <body>
 <div class="app">
@@ -424,6 +456,18 @@
       </div>
     </div>
   </section>
+
+  <!-- پنل آگهی‌های جدید (ساختاریافته + لینک هر اگهی) -->
+  <div class="panel new-panel">
+    <div class="panel-header">
+      <h2>🆕 آگهی‌های جدید</h2>
+      <span id="newLastScan" class="last-scan" style="margin:0;"></span>
+    </div>
+    <div class="panel-body">
+      <div class="new-summary" id="newSummary"></div>
+      <div class="new-list" id="newList"></div>
+    </div>
+  </div>
 
   <div class="main-grid">
     <div class="panel">
@@ -562,6 +606,57 @@ function escHtml(s) {
 }
 function escJs(s) {
   return String(s).replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\\/g,'\\\\');
+}
+
+// ---- آگهی‌های جدید (ساختاریافته) ----
+function renderNewTenders(d) {
+  const list = document.getElementById('newList');
+  const summary = document.getElementById('newSummary');
+  const lastEl = document.getElementById('newLastScan');
+
+  if (d && d.lastScan) {
+    lastEl.textContent = ` آخرین اسکن: ${formatFaDate(d.lastScan)}`;
+  } else {
+    lastEl.textContent = '';
+  }
+
+  // خلاصه: تعداد کل + هر شهرستان
+  const items = (d && Array.isArray(d.items)) ? d.items : null;
+  const byCity = (d && d.byCity && typeof d.byCity === 'object') ? d.byCity : null;
+  const failed = (d && Array.isArray(d.failed)) ? d.failed : [];
+
+  if (items && items.length) {
+    const chips = [];
+    chips.push(`<span class="new-chip">✅ ${items.length} آگهی جدید</span>`);
+    for (const [city, n] of Object.entries(byCity || {})) {
+      chips.push(`<span class="new-chip">${escHtml(city)}: ${n}</span>`);
+    }
+    if (failed.length) chips.push(`<span class="new-chip zero">⚠️ ${failed.length} شهرستان شکست</span>`);
+    summary.innerHTML = chips.join('');
+
+    list.innerHTML = items.map(it => {
+      const link = it.link ? `<a href="${escHtml(it.link)}" target="_blank" rel="noopener">🔗 مشاهده در ستاد</a>` : '';
+      return `<div class="new-item">
+        <div class="ni-top">
+          <span class="ni-no">${it.no || ''}</span>
+          <span class="ni-tag">${escHtml(it.tag || '')}</span>
+        </div>
+        <div class="ni-title">${escHtml(it.title || '—')}</div>
+        <div class="ni-meta"><b>سازمان:</b> ${escHtml(it.org || '—')} · <b>مهلت ارسال:</b> ${escHtml(it.deadline || '—')} · <b>شماره:</b> ${escHtml(it.number || '—')}</div>
+        <div>${link}</div>
+      </div>`;
+    }).join('');
+  } else if (d && d.message) {
+    // پشتیبانی از نسخه‌های قدیمی‌تر که فقط متن خبر برمی‌گردانند
+    const chips = [];
+    chips.push(`<span class="new-chip zero">۰ آگهی جدید</span>`);
+    if (failed.length) chips.push(`<span class="new-chip zero">⚠️ ${failed.length} شهرستان شکست</span>`);
+    summary.innerHTML = chips.join('');
+    list.innerHTML = `<div class="new-empty" style="white-space:pre-wrap;">${escHtml(d.message)}</div>`;
+  } else {
+    summary.innerHTML = '<span class="new-chip zero">هنوز اسکنی انجام نشده</span>';
+    list.innerHTML = '<div class="new-empty">برای دیدن آگهی‌های جدید، دکمه «اسکن فوری» را بزنید.</div>';
+  }
 }
 
 // Report selection helpers
@@ -760,7 +855,6 @@ async function doPdf() {
   } catch (e) {
     toast('خطا در ارتباط', true);
   } finally {
-    // برگرداندن دکمه بعد از یک بازرسازی موفق (loadStatus دکمه را مدیریت می‌کند)
     setTimeout(() => {
       const b = document.getElementById('pdfBtn');
       if (b && b.disabled) { b.disabled = false; b.innerHTML = originalText; }
@@ -846,14 +940,12 @@ async function loadStatus() {
     document.getElementById('lastScanInfo').innerHTML =
       ` آخرین اسکن: <strong>${data.lastScan ? formatFaDate(data.lastScan) : '—'}</strong>`;
 
-    // cache / scan-running badges
     const cacheBadge = document.getElementById('cacheBadge');
     cacheBadge.style.display = data.scanCached ? 'inline' : 'none';
 
     const runBadge = document.getElementById('scanRunningBadge');
     runBadge.style.display = data.scanRunning ? 'inline' : 'none';
 
-    // scan button state
     const scanBtn = document.getElementById('scanBtn');
     if (data.scanRunning) {
       scanBtn.disabled = true;
@@ -863,7 +955,6 @@ async function loadStatus() {
       scanBtn.innerHTML = '🚀 اسکن فوری';
     }
 
-    // pdf button state
     const pdfBtn = document.getElementById('pdfBtn');
     if (data.pdfRunning) {
       pdfBtn.disabled = true;
@@ -873,7 +964,6 @@ async function loadStatus() {
       pdfBtn.innerHTML = '📄 مهلت‌دارها';
     }
 
-    // system status
     const statusText = document.getElementById('systemStatus');
     const statusDot = document.getElementById('statusDot');
     if (data.scanRunning || data.pdfRunning) {
@@ -887,7 +977,6 @@ async function loadStatus() {
       statusDot.style.background = 'var(--red)';
     }
 
-    // scan result message
     const scanResult = document.getElementById('scanResult');
     if (data.lastScanData) {
       const d = data.lastScanData;
@@ -898,13 +987,14 @@ async function loadStatus() {
       scanResult.textContent = '⚠️ ' + data.lastScanError;
     }
 
-    // Only re-render lists when their signature changed → preserves focus, no flicker
+    // لیست آگهی‌های جدید (ساختاریافته یا پشتیبانی از متن قدیمی)
+    renderNewTenders(data.lastScanData);
+
     const cs = citySig(currentConfig);
     const ts = topicSig(currentConfig);
     if (cs !== lastCitySig) { renderCities(cities); lastCitySig = cs; }
     if (ts !== lastTopicSig) { renderTopics(topics); lastTopicSig = ts; }
 
-    // گزارش کامل شهر
     if (currentConfig) buildProvinceOptions(currentConfig);
     const repBadge = document.getElementById('reportRunningBadge');
     const repBtn = document.getElementById('reportBtn');
