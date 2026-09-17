@@ -265,12 +265,14 @@ function runReport(city, province, timeoutMs) {
         env: { ...process.env, CHROME_PATH },
       });
       let stdout = '';
+      let stderr = '';
       const timer = setTimeout(() => { child.kill('SIGTERM'); finish({ ok: false, error: 'زمان تمام شد' }); }, timeoutMs);
       child.stdout.on('data', d => { stdout += d; });
-      child.stderr.on('data', () => {});
+      child.stderr.on('data', d => { stderr += d; });
       child.on('close', code => {
         clearTimeout(timer);
         const out = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        const errLines = stderr.trim().split('\n').map(l => l.trim()).filter(Boolean);
         // city_report.mjs last meaningful line is "PDF: <path>"
         let pdfFile = null;
         for (let i = out.length - 1; i >= 0; i--) {
@@ -281,12 +283,17 @@ function runReport(city, province, timeoutMs) {
         for (let i = out.length - 1; i >= 0; i--) {
           try { return finish(JSON.parse(out[i])); } catch {}
         }
-        // no PDF and no JSON → failure; extract a concise error line
+        // no PDF and no JSON → failure; extract a concise error line (stdout first, then stderr)
         let err = '';
         for (let i = out.length - 1; i >= 0; i--) {
           if (/^(Error|FAILED|rate-limited|\u0627\u0631\u0631\u0627\u0632)/i.test(out[i])) { err = out[i]; break; }
         }
-        finish({ ok: false, error: err || 'گزارش تولید نشد', raw: stdout });
+        if (!err) {
+          for (let i = errLines.length - 1; i >= 0; i--) {
+            if (/^(Error|FAILED|rate-limited|\u0627\u0631\u0631\u0627\u0632)/i.test(errLines[i])) { err = errLines[i]; break; }
+          }
+        }
+        finish({ ok: false, error: err || 'گزارش تولید نشد', raw: stdout, stderr: stderr.trim() });
       });
       child.on('error', err => { clearTimeout(timer); finish({ ok: false, error: String(err) }); });
     });
