@@ -383,28 +383,28 @@
     <div class="stat-card">
       <div class="stat-icon cities">🏙</div>
       <div>
-        <div class="stat-value" id="statCities">--</div>
+        <div class="stat-value" id="statCities">{{STAT_CITIES}}</div>
         <div class="stat-label">شهر فعال</div>
       </div>
     </div>
     <div class="stat-card">
       <div class="stat-icon topics">📋</div>
       <div>
-        <div class="stat-value" id="statTopics">--</div>
+        <div class="stat-value" id="statTopics">{{STAT_TOPICS}}</div>
         <div class="stat-label"> موضوع فعال</div>
       </div>
     </div>
     <div class="stat-card">
       <div class="stat-icon seen">👁</div>
       <div>
-        <div class="stat-value" id="statSeen">--</div>
+        <div class="stat-value" id="statSeen">{{STAT_SEEN}}</div>
         <div class="stat-label">آگهی دیده‌شده</div>
       </div>
     </div>
     <div class="stat-card">
       <div class="stat-icon scan">⚡</div>
       <div>
-        <div class="stat-value" id="statNew">--</div>
+        <div class="stat-value" id="statNew">{{STAT_NEW}}</div>
         <div class="stat-label"> آخرین اسکن</div>
       </div>
     </div>
@@ -415,7 +415,7 @@
       <div class="scan-info">
         <h3>اسکن دستی مناقصات <span id="cacheBadge" class="cache-badge" style="display:none;">کش شده</span> <span id="scanRunningBadge" class="scan-running-badge" style="display:none;">در حال اسکن</span></h3>
         <p> تمام شهرهای فعال را در چند ثانیه اسکن می‌کند و آگهی‌های جدید را گزارش می‌دهد</p>
-        <div class="last-scan" id="lastScanInfo">در حال بارگذاری...</div>
+        <div class="last-scan" id="lastScanInfo">{{LAST_SCAN}}</div>
         <div class="scan-result" id="scanResult"></div>
       </div>
       <div style="display:flex;gap:10px;">
@@ -432,7 +432,7 @@
         <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px;" onclick="showAddCity()">+ افزودن شهر</button>
       </div>
       <div class="panel-body">
-        <div class="item-list" id="citiesList"></div>
+        <div class="item-list" id="citiesList">{{CITIES_LIST}}</div>
         <div id="addCityForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
           <div class="form-row">
             <div class="form-group">
@@ -462,7 +462,7 @@
         <button class="btn btn-secondary" style="padding:8px 16px;font-size:12px;" onclick="showAddTopic()">+ افزودن موضوع</button>
       </div>
       <div class="panel-body">
-        <div class="item-list" id="topicsList"></div>
+        <div class="item-list" id="topicsList">{{TOPICS_LIST}}</div>
         <div id="addTopicForm" style="display:none;margin-top:16px;padding:16px;background:var(--bg3);border-radius:var(--radius3);">
           <div class="form-group">
             <label>نام موضوع</label>
@@ -500,12 +500,14 @@
           <label>استان</label>
           <select class="form-select" id="reportProvince" onchange="onProvinceChange()">
             <option value="">-- انتخاب استان --</option>
+            {{PROVINCES}}
           </select>
         </div>
         <div class="form-group">
           <label>شهر</label>
           <select class="form-select" id="reportCity" onchange="onCityChange()">
             <option value="">-- ابتدا استان را انتخاب کنید --</option>
+            {{CITY_OPTIONS}}
           </select>
         </div>
       </div>

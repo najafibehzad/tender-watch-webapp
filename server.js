@@ -67,6 +67,82 @@ function readState() {
   return st;
 }
 
+// ---- Server-side rendering (page shows content even if JS is blocked) ----
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function escJs(s) {
+  return String(s == null ? '' : s).replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\\/g, '\\\\');
+}
+function renderCitiesSR(cities) {
+  if (!cities || cities.length === 0) return '<div style="color:var(--text3);font-size:13px;">شهری اضافه نشده</div>';
+  return cities.map(c => {
+    if (c._reportSelected === undefined) c._reportSelected = true;
+    return `<div class="item ${c._disabled ? 'disabled' : ''}">
+        <div class="item-left" style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" ${c._reportSelected ? 'checked' : ''} style="accent-color:var(--accent);" width="18">
+          <div>
+            <div class="item-name">${escHtml(c.name)}</div>
+            <div class="item-detail">${escHtml(c.province || '')} ${c.id ? '· کد: ' + c.id : ''}</div>
+          </div>
+        </div>
+        <div class="toggle ${c._disabled ? '' : 'on'}"></div>
+      </div>`;
+  }).join('');
+}
+function renderTopicsSR(topics) {
+  if (!topics || Object.keys(topics).length === 0) return '<div style="color:var(--text3);font-size:13px;"> موضوعی اضافه نشده</div>';
+  return Object.entries(topics).map(([name, kw]) => {
+    const kws = Array.isArray(kw) ? kw.join(', ') : kw;
+    const isObj = typeof kw === 'object';
+    const disabled = isObj ? kw._disabled : false;
+    return `<div class="item ${disabled ? 'disabled' : ''}">
+        <div class="item-left" style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" style="accent-color:var(--accent);" width="18">
+          <div>
+            <div class="item-name">${escHtml(name)}</div>
+            <div class="item-detail">${escHtml(kws)}${disabled ? ' · خاموش' : ''}</div>
+          </div>
+        </div>
+        <div class="toggle ${disabled ? '' : 'on'}"></div>
+      </div>`;
+  }).join('');
+}
+function provincesSR(cfg) {
+  const ps = [...new Set((cfg.districts || []).map(d => d.province).filter(Boolean))].sort();
+  return ps.map(p => `<option value="${escJs(p)}">${escHtml(p)}</option>`).join('');
+}
+
+function renderCityOptionsSR(cfg) {
+  if (!cfg || !cfg.districts || cfg.districts.length === 0) {
+    return '<option value="">شهری برای نمایش وجود ندارد</option>';
+  }
+  // Group cities by province
+  const map = {};
+  for (const d of cfg.districts) {
+    if (d._disabled) continue;
+    const prov = d.province || 'نامشخص';
+    if (!map[prov]) map[prov] = [];
+    map[prov].push(d);
+  }
+  const provinces = Object.keys(map).sort();
+  let html = '';
+  for (const prov of provinces) {
+    const cities = map[prov].sort((a, b) => a.name.localeCompare(b.name));
+    html += `<optgroup label="${escHtml(prov)}">`;
+    for (const c of cities) {
+      html += `<option value="${escJs(c.name)}">${escHtml(c.name)}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  return html;
+}
+function formatFaDateSR(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+}
+
 // ---- Input validation (Persian-only) ----
 function isPersianName(s) {
   if (typeof s !== 'string' || s.length === 0 || s.length > 80) return false;
@@ -405,8 +481,25 @@ async function handleRequest(req, res) {
     }
     fs.readFile(filePath, (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      res.end(data);
+      let html = data.toString('utf8');
+      // Server-side render core content so the page is useful even if JS is blocked
+      const cfg = readConfig();
+      const st = readState();
+      if (cfg) {
+        const activeCities = (cfg.districts || []).filter(c => !c._disabled).length;
+        const activeTopics = Object.keys(cfg.topics || {}).filter(t => !cfg.topics[t]._disabled).length;
+        html = html.replace(/{{STAT_CITIES}}/g, activeCities);
+        html = html.replace(/{{STAT_TOPICS}}/g, activeTopics);
+        html = html.replace(/{{STAT_SEEN}}/g, st?.seenCount || 0);
+        html = html.replace(/{{STAT_NEW}}/g, lastScanAt ? formatFaDateSR(lastScanAt) : '—');
+        html = html.replace(/{{LAST_SCAN}}/g, lastScanAt ? ` آخرین اسکن: <strong>${formatFaDateSR(lastScanAt)}</strong>` : 'در حال بارگذاری...');
+        html = html.replace(/{{CITIES_LIST}}/g, renderCitiesSR(cfg.districts));
+        html = html.replace(/{{TOPICS_LIST}}/g, renderTopicsSR(cfg.topics));
+        html = html.replace(/{{PROVINCES}}/g, provincesSR(cfg));
+        html = html.replace(/{{CITY_OPTIONS}}/g, renderCityOptionsSR(cfg));
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(html);
     });
     return;
   }
@@ -446,7 +539,7 @@ function startServer(firstPort) {
         process.exit(1);
       }
     });
-    server.listen(port, () => {
+    server.listen(port, '0.0.0.0', () => {
       PORT = port;
       console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${port} آماده است`);
       console.log(`   http://localhost:${port}`);
