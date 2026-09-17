@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>دیده‌بان مناقصات ستاد</title>
 <style>
-  /* System fonts — instant load, no CDN dependency */
+  /* سیستم فونت — بارگذاری فوری، بدون وابستگی CDN */
   body {
     font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
     background: #0f1419;
@@ -261,6 +261,18 @@
   }
   .last-scan { font-size: 12px; color: var(--text3); margin-top: 8px; }
   .last-scan strong { color: var(--accent); }
+  .scan-result {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--bg3);
+    border-radius: var(--radius3);
+    font-size: 13px;
+    color: var(--text2);
+    border-right: 3px solid var(--accent);
+    display: none;
+  }
+  .scan-result.show { display: block; }
+  .scan-result.error { border-right-color: var(--red); color: #ff9a9a; }
 
   .toast {
     position: fixed;
@@ -370,9 +382,10 @@
   <section class="scan-section">
     <div class="scan-card">
       <div class="scan-info">
-        <h3>اسکن دستی مناقصات <span id="cacheBadge" class="cache-badge" style="display:none;">کش شده</span></h3>
+        <h3>اسکن دستی مناقصات <span id="cacheBadge" class="cache-badge" style="display:none;">کش شده</span> <span id="scanRunningBadge" class="scan-running-badge" style="display:none;">در حال اسکن</span></h3>
         <p> تمام شهرهای فعال را در چند ثانیه اسکن می‌کند و آگهی‌های جدید را گزارش می‌دهد</p>
         <div class="last-scan" id="lastScanInfo">در حال بارگذاری...</div>
+        <div class="scan-result" id="scanResult"></div>
       </div>
       <div style="display:flex;gap:10px;">
         <button class="btn btn-primary scan-btn" id="scanBtn" onclick="doScan()">🚀 اسکن فوری</button>
@@ -453,6 +466,10 @@
 const API = '/api';
 let currentConfig = null;
 
+// امضاهای لیست‌ها: فقط وقتی تغییر کنند بازرسازی می‌شوند (کاهش بازرسازی ۱۵ ثانیه‌ای)
+let lastCitySig = '';
+let lastTopicSig = '';
+
 function toast(msg, isError) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -478,7 +495,6 @@ function formatFaDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 }
-
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -529,62 +545,12 @@ function updateAllCheckboxes() {
   if (topicsCb) topicsCb.checked = allTopicsChecked;
 }
 
-async function loadStatus() {
-  try {
-    const data = await apiGet('/status');
-    currentConfig = data.config;
-    const st = data.state;
-
-    const cities = currentConfig?.districts || [];
-    const activeCities = cities.filter(c => !c._disabled);
-    const topics = currentConfig?.topics || {};
-    const activeTopics = Object.keys(topics).filter(t => !topics[t]._disabled);
-
-    document.getElementById('statCities').textContent = activeCities.length;
-    document.getElementById('statTopics').textContent = activeTopics.length;
-    document.getElementById('statSeen').textContent = st?.seenCount || 0;
-    document.getElementById('statNew').textContent = data.lastScan ? formatFaDate(data.lastScan) : '—';
-
-    document.getElementById('lastScanInfo').innerHTML =
-      ` آخرین اسکن: <strong>${data.lastScan ? formatFaDate(data.lastScan) : '—'}</strong>`;
-
-    // Show cache badge if scan result is cached
-    const cacheBadge = document.getElementById('cacheBadge');
-    if (data.scanCached) {
-      cacheBadge.style.display = 'inline';
-    } else {
-      cacheBadge.style.display = 'none';
-    }
-
-    // Show scan running badge
-    const scanBtn = document.getElementById('scanBtn');
-    if (data.scanRunning) {
-      scanBtn.disabled = true;
-      scanBtn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
-    } else {
-      scanBtn.disabled = false;
-      scanBtn.innerHTML = '🚀 اسکن فوری';
-    }
-
-    // System status
-    const statusText = document.getElementById('systemStatus');
-    const statusDot = document.getElementById('statusDot');
-    if (data.scanRunning) {
-      statusText.textContent = 'در حال اسکن';
-      statusDot.style.background = '#ffa502';
-    } else if (data.ok) {
-      statusText.textContent = 'آماده';
-      statusDot.style.background = 'var(--accent)';
-    } else {
-      statusText.textContent = 'خطا';
-      statusDot.style.background = 'var(--red)';
-    }
-
-    renderCities(cities);
-    renderTopics(topics);
-  } catch (e) {
-    toast('خطا در دریافت اطلاعات', true);
-  }
+function citySig(cfg) {
+  return JSON.stringify((cfg.districts || []).map(d => d.name + '|' + (d._disabled ? 1 : 0) + '|' + (d._reportSelected ? 1 : 0)));
+}
+function topicSig(cfg) {
+  if (!cfg.topics) return '';
+  return JSON.stringify(Object.entries(cfg.topics).map(([n, v]) => n + '|' + (typeof v === 'object' ? (v._disabled ? 1 : 0) + '|' + (v._reportSelected ? 1 : 0) : 'x')));
 }
 
 function renderCities(cities) {
@@ -697,25 +663,17 @@ async function doScan() {
   btn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
   try {
     const data = await apiPost('/scan', {});
-    if (data.ok) {
-      if (data.scanRunning) {
-        toast('اسکن در حال اجراست... لطفاً کمی صبر کنید');
-      } else {
-        toast(data.reply || 'اسکن کامل شد');
-      }
-      await loadStatus();
+    if (data.cached) {
+      toast('از کش استفاده شد — اسکن ۶۰ ثانیه پیش است');
+    } else if (data.scanRunning) {
+      toast('اسکن شروع شد — هر ۱۰ ثانیه به‌روزرسانی می‌شود');
     } else {
-      toast(data.error || 'خطا در اسکن', true);
+      toast(data.reply || 'اسکن کامل شد');
     }
   } catch (e) {
     toast('خطا در ارتباط', true);
-  } finally {
-    // Reset button after a delay if still not running
-    setTimeout(() => {
-      const btn = document.getElementById('scanBtn');
-      if (btn && !btn.disabled) return;
-      if (btn) { btn.disabled = false; btn.innerHTML = '🚀 اسکن فوری'; }
-    }, 500);
+    btn.disabled = false;
+    btn.innerHTML = '🚀 اسکن فوری';
   }
 }
 
@@ -726,34 +684,120 @@ async function doPdf() {
   btn.innerHTML = '<span class="spinner"></span> در حال تولید PDF...';
   try {
     const data = await apiPost('/pdf', {});
-    if (data.ok) {
+    if (data.cached) {
+      toast('PDF از کش استفاده شد');
+    } else if (data.pdfRunning) {
+      toast('در حال تولید PDF... هر ۱۰ ثانیه به‌روزرسانی می‌شود');
+    } else {
       toast('PDF آماده شد — ' + (data.pdfCount || 0) + ' مناقصه');
       if (data.pdfFileDesktop) {
         toast('کپی شد به دسکتاپ');
-        try {
-          const resp = await fetch('file:///' + data.pdfFileDesktop.replace(/\\/g, '/'));
-          const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
-        } catch (e) {
-          try { window.open('file:///' + data.pdfFileDesktop.replace(/\\/g, '/'), '_blank'); } catch (e2) {}
-        }
+        try { window.open('file:///' + data.pdfFileDesktop.replace(/\\/g, '/'), '_blank'); } catch (e) {}
       }
-      await loadStatus();
-    } else {
-      toast(data.error || 'خطا در تولید PDF', true);
     }
   } catch (e) {
     toast('خطا در ارتباط', true);
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalText;
+    // برگرداندن دکمه بعد از یک بازرسازی موفق (loadStatus دکمه را مدیریت می‌کند)
+    setTimeout(() => {
+      const b = document.getElementById('pdfBtn');
+      if (b && b.disabled) { b.disabled = false; b.innerHTML = originalText; }
+    }, 800);
   }
 }
 
-// Init — load immediately, poll every 15s for status updates
+async function loadStatus() {
+  try {
+    const data = await apiGet('/status');
+    currentConfig = data.config;
+    const st = data.state;
+
+    const cities = currentConfig?.districts || [];
+    const activeCities = cities.filter(c => !c._disabled);
+    const topics = currentConfig?.topics || {};
+    const activeTopics = Object.keys(topics).filter(t => !topics[t]._disabled);
+
+    document.getElementById('statCities').textContent = activeCities.length;
+    document.getElementById('statTopics').textContent = activeTopics.length;
+    document.getElementById('statSeen').textContent = st?.seenCount || 0;
+    document.getElementById('statNew').textContent = data.lastScan ? formatFaDate(data.lastScan) : '—';
+
+    document.getElementById('lastScanInfo').innerHTML =
+      ` آخرین اسکن: <strong>${data.lastScan ? formatFaDate(data.lastScan) : '—'}</strong>`;
+
+    // cache / scan-running badges
+    const cacheBadge = document.getElementById('cacheBadge');
+    cacheBadge.style.display = data.scanCached ? 'inline' : 'none';
+
+    const runBadge = document.getElementById('scanRunningBadge');
+    runBadge.style.display = data.scanRunning ? 'inline' : 'none';
+
+    // scan button state
+    const scanBtn = document.getElementById('scanBtn');
+    if (data.scanRunning) {
+      scanBtn.disabled = true;
+      scanBtn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
+    } else {
+      scanBtn.disabled = false;
+      scanBtn.innerHTML = '🚀 اسکن فوری';
+    }
+
+    // pdf button state
+    const pdfBtn = document.getElementById('pdfBtn');
+    if (data.pdfRunning) {
+      pdfBtn.disabled = true;
+      pdfBtn.innerHTML = '<span class="spinner"></span> در حال تولید PDF...';
+    } else {
+      pdfBtn.disabled = false;
+      pdfBtn.innerHTML = '📄 مهلت‌دارها';
+    }
+
+    // system status
+    const statusText = document.getElementById('systemStatus');
+    const statusDot = document.getElementById('statusDot');
+    if (data.scanRunning || data.pdfRunning) {
+      statusText.textContent = 'در حال پردازش';
+      statusDot.style.background = '#ffa502';
+    } else if (data.ok) {
+      statusText.textContent = 'آماده';
+      statusDot.style.background = 'var(--accent)';
+    } else {
+      statusText.textContent = 'خطا';
+      statusDot.style.background = 'var(--red)';
+    }
+
+    // scan result message
+    const scanResult = document.getElementById('scanResult');
+    if (data.lastScanData) {
+      const d = data.lastScanData;
+      scanResult.className = 'scan-result show' + (d.ok === false ? ' error' : '');
+      scanResult.textContent = (d.ok === false ? '⚠️ ' : '') + (d.message || '');
+    } else if (data.lastScanError) {
+      scanResult.className = 'scan-result show error';
+      scanResult.textContent = '⚠️ ' + data.lastScanError;
+    }
+
+    // Only re-render lists when their signature changed → preserves focus, no flicker
+    const cs = citySig(currentConfig);
+    const ts = topicSig(currentConfig);
+    if (cs !== lastCitySig) { renderCities(cities); lastCitySig = cs; }
+    if (ts !== lastTopicSig) { renderTopics(topics); lastTopicSig = ts; }
+  } catch (e) {
+    toast('خطا در دریافت اطلاعات', true);
+  }
+}
+
+// Init + poll. پولِ زیرپنجره متوقف می‌شود تا CPU/برق مصرف نکند.
 loadStatus();
-setInterval(loadStatus, 15000);
+let pollTimer = setInterval(loadStatus, 10000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearInterval(pollTimer);
+  } else {
+    loadStatus();
+    pollTimer = setInterval(loadStatus, 10000);
+  }
+});
 </script>
 </body>
 </html>

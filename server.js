@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-// سرور وب اپ دیده‌بان مناقصات — نسخه بهینه‌شده
-// اجرا: node server.js  →  http://localhost:3721
+// سرور وب اپ دیده‌بان مناقصات — نسخه ۳ (بازنویسی ۲۰۲۶-۰۹-۱۷)
+// اجرا: node server.js  →  http://localhost:3725
+//
+// چرا سریع‌تر است:
+//  - اسکن و PDF در پس‌زمینه می‌روند و بلافاصله پاسخ می‌دهند (اتصال HTTP بسته نمی‌شود)
+//  - کش ۶۰ ثانیه‌ای： کلیک متوالی روی «اسکن فوری» فوراً جواب می‌دهد
+//  - پولِ ۱۵ ثانیه‌ای فقط اطلاعات جدید را می‌کشد (بازارگاه لیست بازسازی نمی‌شود)
+//  - مسیرها و باینر نود از import.meta.url / process.execPath گرفته می‌شوند (بhardcode نیستند)
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -11,16 +17,23 @@ import zlib from 'node:zlib';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WATCH = path.resolve(HERE, '..', 'tender-watch');
 const PUBLIC = path.resolve(HERE, 'public');
-const PORT = parseInt(process.env.PORT || '3721', 10);
+const NODE_BIN = process.execPath;
+const WATCH_SCRIPT = path.join(WATCH, 'tender_watch.mjs');
+const PORT = parseInt(process.env.PORT || '3725', 10);
 
 const CONFIG_P = path.join(WATCH, 'watch_config.json');
 const STATE_P = path.join(WATCH, 'watch_state.json');
 
-// ---- Cache & scan state (in-memory) ----
+// ---- Cache & background job state ----
 const CACHE_TTL = 60000; // 60 seconds
 let scanCache = { data: null, ts: 0 };
 let scanRunning = false;
-let lastScanResult = null;
+let lastScanAt = null;
+let lastScanError = null;
+
+let pdfRunning = false;
+let pdfCache = { data: null, ts: 0 };
+let lastPdfAt = null;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -31,7 +44,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
 };
 
-// ---- Direct JSON access ----
+// ---- JSON helpers ----
 function readJson(p, def) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return def; }
 }
@@ -47,7 +60,7 @@ function readState() {
   return st;
 }
 
-// ---- Input validation ----
+// ---- Input validation (Persian-only) ----
 function isPersianName(s) {
   if (typeof s !== 'string' || s.length === 0 || s.length > 80) return false;
   for (const ch of s) {
@@ -66,10 +79,8 @@ function isPersianKeywords(s) {
   }
   return true;
 }
-const validName = isPersianName;
-const validKw = isPersianKeywords;
 
-// ---- Gzip compression helper ----
+// ---- Gzip compression ----
 function sendGzipJson(res, data, status = 200) {
   const json = JSON.stringify(data);
   const buf = Buffer.from(json, 'utf8');
@@ -87,34 +98,28 @@ function sendGzipJson(res, data, status = 200) {
     res.end(compressed);
   });
 }
-
 function sendJson(res, data, status = 200) {
-  // Use gzip for larger responses (>500 bytes)
   const json = JSON.stringify(data);
-  if (json.length > 500) {
-    sendGzipJson(res, data, status);
-  } else {
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(json);
-  }
+  if (json.length > 500) return sendGzipJson(res, data, status);
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(json);
 }
 
-// ---- Run tender_watch command (async, non-blocking) ----
+// ---- Run tender_watch in background (never blocks the request handler) ----
 function runWatch(args, timeoutMs) {
   return new Promise(resolve => {
     let resolved = false;
     const finish = (result) => { if (!resolved) { resolved = true; resolve(result); } };
 
     import('node:child_process').then(cp => {
-      const child = cp.spawn(
-        'C:\\Users\\behzad\\AppData\\Local\\hermes\\node\\node.exe',
-        ['C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch\\tender_watch.mjs', ...args],
-        { cwd: 'C:\\Users\\behzad\\.zcode\\workspace\\default\\tender-watch', maxBuffer: 10 * 1024 * 1024 }
-      );
+      const child = cp.spawn(NODE_BIN, [WATCH_SCRIPT, ...args], {
+        cwd: WATCH,
+        maxBuffer: 10 * 1024 * 1024,
+      });
       let stdout = '';
-      const timer = setTimeout(() => { child.kill(); finish({ ok: false, error: 'زمان تمام شد' }); }, timeoutMs);
+      const timer = setTimeout(() => { child.kill('SIGTERM'); finish({ ok: false, error: 'زمان تمام شد' }); }, timeoutMs);
 
-      child.stdout.on('data', d => stdout += d);
+      child.stdout.on('data', d => { stdout += d; });
       child.stderr.on('data', () => {});
       child.on('close', code => {
         clearTimeout(timer);
@@ -129,87 +134,133 @@ function runWatch(args, timeoutMs) {
   });
 }
 
-// ---- HTTP server ----
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const p = url.pathname;
+// ---- Background scan job ----
+async function doScan() {
+  const result = await runWatch(['scan', '--json'], 150000);
+  scanCache = { data: result, ts: Date.now() };
+  lastScanAt = new Date().toISOString();
+  lastScanError = result.ok ? null : (result.error || 'اسکن با خرابی مواجه شد');
+  return result;
+}
 
-  const readBody = () => new Promise(resolve => {
+// ---- Background PDF job ----
+async function doPdf() {
+  const result = await runWatch(['pdf', '--json'], 240000);
+  pdfCache = { data: result, ts: Date.now() };
+  lastPdfAt = new Date().toISOString();
+  if (result.ok && result.pdfFile) {
+    try {
+      const desktopPath = path.join(process.env.USERPROFILE || 'C:\\Users\\behzad\\Desktop', '');
+      const fileName = path.basename(result.pdfFile);
+      const destPath = path.join(desktopPath, fileName);
+      fs.copyFileSync(result.pdfFile, destPath);
+      result.pdfFileDesktop = destPath;
+      try {
+        const cp = await import('node:child_process');
+        cp.execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
+      } catch {}
+    } catch {}
+  }
+  return result;
+}
+
+// ---- Read POST body (size-limited) ----
+function readBody(req, limit = 1 << 20) {
+  return new Promise(resolve => {
     const chunks = [];
-    req.on('data', c => chunks.push(c));
+    let len = 0;
+    let tooBig = false;
+    req.on('data', c => {
+      if (tooBig) return;
+      len += c.length;
+      if (len > limit) { tooBig = true; req.destroy(); return resolve({ __tooBig: true }); }
+      chunks.push(c);
+    });
     req.on('end', () => {
+      if (tooBig) return resolve({ __tooBig: true });
       const raw = Buffer.concat(chunks).toString('utf8');
       try { resolve(JSON.parse(raw)); } catch { resolve({}); }
     });
+    req.on('error', () => resolve({}));
   });
+}
 
-  // GET /api/status — fast, no scan, returns cached scan result if available
+// ---- HTTP server ----
+const server = http.createServer(async (req, res) => {
+  // Reject anything that isn't GET/POST quickly
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Method not allowed');
+  }
+
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const p = url.pathname;
+
+  // GET /health — lightweight liveness, no file reads
+  if (p === '/health' && req.method === 'GET') {
+    return sendJson(res, { ok: true, scanRunning, pdfRunning, port: PORT });
+  }
+
+  // GET /api/status — fast, no scan
   if (p === '/api/status' && req.method === 'GET') {
-    const cfg = readConfig();
-    const st = readState();
-    const now = Date.now();
-    const cacheFresh = scanCache.data && (now - scanCache.ts) < CACHE_TTL;
     return sendJson(res, {
       ok: true,
-      config: cfg,
-      state: st,
+      config: readConfig(),
+      state: readState(),
       scanRunning,
-      lastScan: lastScanResult,
-      scanCached: cacheFresh,
-      reply: 'Status retrieved',
+      lastScan: lastScanAt,
+      scanCached: !!scanCache.data && (Date.now() - scanCache.ts) < CACHE_TTL,
+      lastScanData: scanCache.data,
+      lastScanError,
+      pdfRunning,
+      lastPdf: lastPdfAt,
+      lastPdfData: pdfCache.data,
     });
   }
 
-  // POST /api/scan — returns immediately if cached or already running
+  // GET /api/config
+  if (p === '/api/config' && req.method === 'GET') {
+    return sendJson(res, readConfig());
+  }
+
+  // POST /api/scan — returns IMMEDIATELY; scan runs in background, client polls /api/status
   if (p === '/api/scan' && req.method === 'POST') {
     const now = Date.now();
-    // Return cached result if fresh
-    if (scanCache.data && (now - scanCache.ts) < CACHE_TTL && !scanRunning) {
-      return sendJson(res, scanCache.data);
-    }
-    // Already running — tell client to wait
     if (scanRunning) {
       return sendJson(res, { ok: true, scanRunning: true, reply: 'اسکن در حال اجراست... لطفاً کمی صبر کنید' });
     }
-    // Start scan
+    if (scanCache.data && (now - scanCache.ts) < CACHE_TTL) {
+      return sendJson(res, { ok: true, cached: true, ...scanCache.data });
+    }
     scanRunning = true;
-    const result = await runWatch(['scan', '--json'], 120000);
-    scanRunning = false;
-    scanCache = { data: result, ts: Date.now() };
-    lastScanResult = new Date().toISOString();
-    return sendJson(res, result);
+    lastScanError = null;
+    doScan().finally(() => { scanRunning = false; });
+    return sendJson(res, { ok: true, scanRunning: true, startedAt: new Date().toISOString(), reply: 'اسکن شروع شد' });
   }
 
-  // POST /api/pdf — async, non-blocking
+  // POST /api/pdf — returns IMMEDIATELY; PDF runs in background
   if (p === '/api/pdf' && req.method === 'POST') {
-    const result = await runWatch(['pdf', '--json'], 180000);
-    if (result.ok && result.pdfFile) {
-      try {
-        const desktopPath = 'C:\\Users\\behzad\\Desktop';
-        const fileName = path.basename(result.pdfFile);
-        const destPath = path.join(desktopPath, fileName);
-        fs.copyFileSync(result.pdfFile, destPath);
-        result.pdfFileDesktop = destPath;
-        try {
-          const cp = await import('node:child_process');
-          cp.execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
-        } catch {}
-      } catch {}
+    if (pdfRunning) {
+      return sendJson(res, { ok: true, pdfRunning: true, reply: 'PDF در حال تولید است... لطفاً کمی صبر کنید' });
     }
-    return sendJson(res, result);
+    if (pdfCache.data && (Date.now() - pdfCache.ts) < CACHE_TTL) {
+      return sendJson(res, { ok: true, cached: true, ...pdfCache.data });
+    }
+    pdfRunning = true;
+    doPdf().finally(() => { pdfRunning = false; });
+    return sendJson(res, { ok: true, pdfRunning: true, startedAt: new Date().toISOString(), reply: 'در حال تولید PDF...' });
   }
 
   // POST /api/toggle
   if (p === '/api/toggle' && req.method === 'POST') {
-    const { name } = await readBody();
-    if (!validName(name)) return sendJson(res, { ok: false, error: 'نام نامعتبر' }, 400);
+    const { name } = await readBody(req);
+    if (!isPersianName(name)) return sendJson(res, { ok: false, error: 'نام نامعتبر' }, 400);
     const cfg = readConfig();
     if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
     const ci = cfg.districts?.find(d => d.name === name);
     if (ci) {
       ci._disabled = !ci._disabled;
       writeJson(CONFIG_P, cfg);
-      // Invalidate scan cache on config change
       scanCache = { data: null, ts: 0 };
       return sendJson(res, { ok: true, on: !ci._disabled,
         reply: `${name} ${!ci._disabled ? 'روشن' : 'vimosh'} شد` });
@@ -226,14 +277,14 @@ const server = http.createServer(async (req, res) => {
 
   // POST /api/add-city
   if (p === '/api/add-city' && req.method === 'POST') {
-    const { city, province } = await readBody();
-    if (!validName(city)) return sendJson(res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
+    const { city, province } = await readBody(req);
+    if (!isPersianName(city)) return sendJson(res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
     const cfg = readConfig();
     if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
     if (cfg.districts?.some(d => d.name === city)) {
       return sendJson(res, { ok: false, error: 'شهر قبلاً وجود دارد' }, 400);
     }
-    cfg.districts.push({ name: city, id: '0', province: province || 'نام未知' });
+    cfg.districts.push({ name: city, id: '0', province: province || 'نام مشخص نشده' });
     writeJson(CONFIG_P, cfg);
     scanCache = { data: null, ts: 0 };
     return sendJson(res, { ok: true, reply: `${city} اضافه شد` });
@@ -241,9 +292,9 @@ const server = http.createServer(async (req, res) => {
 
   // POST /api/add-topic
   if (p === '/api/add-topic' && req.method === 'POST') {
-    const { name, keywords, park } = await readBody();
-    if (!validName(name)) return sendJson(res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
-    if (!validKw(keywords)) return sendJson(res, { ok: false, error: 'کلیدواژه نامعتبر' }, 400);
+    const { name, keywords, park } = await readBody(req);
+    if (!isPersianName(name)) return sendJson(res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
+    if (!isPersianKeywords(keywords)) return sendJson(res, { ok: false, error: 'کلیدواژه نامعتبر' }, 400);
     const cfg = readConfig();
     if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
     if (cfg.topics && cfg.topics[name] !== undefined) {
@@ -259,11 +310,6 @@ const server = http.createServer(async (req, res) => {
     writeJson(CONFIG_P, cfg);
     scanCache = { data: null, ts: 0 };
     return sendJson(res, { ok: true, reply: `topic ${name} اضافه شد` });
-  }
-
-  // GET /api/config
-  if (p === '/api/config' && req.method === 'GET') {
-    return sendJson(res, readConfig());
   }
 
   // Static files
@@ -284,10 +330,17 @@ const server = http.createServer(async (req, res) => {
   res.end('Not found');
 });
 
+// Keep the server responsive: don't let one slow client block others
+server.keepAliveTimeout = 5000;
+server.headersTimeout = 6000;
+server.maxRequestsPerSocket = 1000;
+server.timeout = 30000;
+
 server.listen(PORT, () => {
   console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${PORT} آماده است`);
   console.log(`   http://localhost:${PORT}`);
+  console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
 });
 
 process.on('uncaughtException', err => console.error('Uncaught:', err.message));
-process.on('unhandledRejection', err => console.error('Unhandled rejection:', err));
+process.on('unhandledRejection', err => console.error('Unhandled rejection:', err.message));
