@@ -327,7 +327,38 @@
     .stats { grid-template-columns: 1fr 1fr; }
     .panel-body { padding: 14px; }
   }
-</style>
+
+  /* پنل گزارش کامل شهر */
+  .report-panel { margin-bottom: 28px; }
+  .report-panel .panel-body { display: flex; flex-direction: column; gap: 14px; }
+  .form-select {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius3);
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .form-select:focus { outline: none; border-color: var(--accent); }
+  .report-result {
+    padding: 14px 18px;
+    background: var(--bg3);
+    border-radius: var(--radius3);
+    font-size: 13px;
+    color: var(--text2);
+    border-right: 3px solid var(--accent);
+    display: none;
+    align-items: center;
+    gap: 12px;
+  }
+  .report-result.show { display: flex; }
+  .report-result.error { border-right-color: var(--red); color: #ff9a9a; }
+  .report-result a { color: var(--accent); text-decoration: none; }
+  .report-result a:hover { text-decoration: underline; }
+  .report-running { display: flex; align-items: center; gap: 10px; color: #ffa502; }
 </head>
 <body>
 <div class="app">
@@ -455,6 +486,35 @@
           <label for="allTopicsCheck" style="font-size:12px;color:var(--text2);cursor:pointer;">همه موضوعات برای گزارش</label>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- پنل گزارش کامل شهر: استان → شهر → PDF با لینک هر اگهی -->
+  <div class="panel report-panel">
+    <div class="panel-header">
+      <h2>📄 گزارش کامل شهر</h2>
+    </div>
+    <div class="panel-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>استان</label>
+          <select class="form-select" id="reportProvince" onchange="onProvinceChange()">
+            <option value="">-- انتخاب استان --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>شهر</label>
+          <select class="form-select" id="reportCity" onchange="onCityChange()">
+            <option value="">-- ابتدا استان را انتخاب کنید --</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="reportBtn" onclick="doReport()" disabled>📊 تولید گزارش کامل</button>
+        <span id="reportRunningBadge" class="scan-running-badge" style="display:none;">در حال تولید گزارش</span>
+      </div>
+      <div class="last-scan" id="reportLastInfo" style="margin:0;"></div>
+      <div class="report-result" id="reportResult"></div>
     </div>
   </div>
 
@@ -706,6 +766,65 @@ async function doPdf() {
   }
 }
 
+// ---- گزارش کامل شهر (استان → شهر → PDF با لینک هر اگهی) ----
+function buildProvinceOptions(cfg) {
+  const sel = document.getElementById('reportProvince');
+  const provinces = [...new Set((cfg.districts || []).map(d => d.province).filter(Boolean))].sort();
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">-- انتخاب استان --</option>' +
+    provinces.map(p => `<option value="${escJs(p)}">${escHtml(p)}</option>`).join('');
+  sel.value = prev;
+  onProvinceChange();
+}
+
+function onProvinceChange() {
+  const prov = document.getElementById('reportProvince').value;
+  const citySel = document.getElementById('reportCity');
+  const cfg = currentConfig;
+  const cities = (cfg?.districts || [])
+    .filter(d => !prov || (d.province || '') === prov)
+    .map(d => d.name)
+    .sort();
+  const prev = citySel.value;
+  citySel.innerHTML = '<option value="">-- انتخاب شهر --</option>' +
+    cities.map(c => `<option value="${escJs(c)}">${escHtml(c)}</option>`).join('');
+  citySel.value = prev;
+  onCityChange();
+}
+
+function onCityChange() {
+  const city = document.getElementById('reportCity').value;
+  const btn = document.getElementById('reportBtn');
+  btn.disabled = !city;
+}
+
+async function doReport() {
+  const city = document.getElementById('reportCity').value;
+  const province = document.getElementById('reportProvince').value;
+  if (!city) { toast('یک شهر انتخاب کنید', true); return; }
+  const btn = document.getElementById('reportBtn');
+  const badge = document.getElementById('reportRunningBadge');
+  btn.disabled = true;
+  badge.style.display = 'inline';
+  try {
+    const data = await apiPost('/report', { city, province });
+    if (data.cached) {
+      toast('گزارش از کش استفاده شد');
+    } else if (data.reportRunning) {
+      toast(`در حال تولید گزارش کامل برای ${city}... هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
+    } else {
+      toast(data.reply || 'گزارش آماده شد');
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
+}
+
+function openReport(path) {
+  try { window.open('file:///' + path.replace(/\\/g, '/'), '_blank'); }
+  catch (e) { toast('خطا در باز کردن PDF', true); }
+}
+
 async function loadStatus() {
   try {
     const data = await apiGet('/status');
@@ -782,6 +901,42 @@ async function loadStatus() {
     const ts = topicSig(currentConfig);
     if (cs !== lastCitySig) { renderCities(cities); lastCitySig = cs; }
     if (ts !== lastTopicSig) { renderTopics(topics); lastTopicSig = ts; }
+
+    // گزارش کامل شهر
+    if (currentConfig) buildProvinceOptions(currentConfig);
+    const repBadge = document.getElementById('reportRunningBadge');
+    const repBtn = document.getElementById('reportBtn');
+    if (data.reportRunning) {
+      repBadge.style.display = 'inline';
+      repBtn.disabled = true;
+    } else {
+      repBadge.style.display = 'none';
+      repBtn.disabled = !document.getElementById('reportCity').value;
+    }
+    const repInfo = document.getElementById('reportLastInfo');
+    const repResult = document.getElementById('reportResult');
+    if (data.lastReport) {
+      repInfo.innerHTML = ` آخرین گزارش: <strong>${formatFaDate(data.lastReport)}</strong>`;
+    } else {
+      repInfo.innerHTML = '';
+    }
+    if (data.lastReportData) {
+      const d = data.lastReportData;
+      repResult.className = 'report-result show' + (d.ok === false ? ' error' : '');
+      if (d.ok === false) {
+        repResult.innerHTML = `<span class="report-running">⚠️ ${escHtml(d.error || 'خطا در تولید گزارش')}</span>`;
+      } else if (d.pdfFileDesktop) {
+        repResult.innerHTML = `<span>✅ گزارش آماده شد — ${escHtml(d.pdfFileDesktop)}</span>` +
+          `<a href="#" onclick="openReport('${escJs(d.pdfFileDesktop)}'); return false;">باز کردن</a>`;
+      } else if (d.pdfFile) {
+        repResult.innerHTML = `<span>✅ گزارش آماده شد — ${escHtml(d.pdfFile)}</span>`;
+      } else {
+        repResult.innerHTML = '';
+      }
+    } else if (data.lastReportData === null) {
+      repResult.className = 'report-result';
+      repResult.innerHTML = '';
+    }
   } catch (e) {
     toast('خطا در دریافت اطلاعات', true);
   }

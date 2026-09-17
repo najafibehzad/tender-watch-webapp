@@ -35,6 +35,13 @@ let pdfRunning = false;
 let pdfCache = { data: null, ts: 0 };
 let lastPdfAt = null;
 
+// ---- گزارش کامل شهر (فراخوانی city_report.mjs در fardis-tenders) ----
+const FARDIS = path.resolve(HERE, '..', 'fardis-tenders');
+const CHROME_PATH = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+let reportRunning = false;
+let reportCache = { data: null, ts: 0 };
+let lastReportAt = null;
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -164,6 +171,66 @@ async function doPdf() {
   return result;
 }
 
+// ---- Run city_report.mjs (full per-city PDF report with tender links) ----
+function runReport(city, province, timeoutMs) {
+  return new Promise(resolve => {
+    let resolved = false;
+    const finish = (result) => { if (!resolved) { resolved = true; resolve(result); } };
+    import('node:child_process').then(cp => {
+      const args = [path.join(FARDIS, 'city_report.mjs'), city];
+      if (province) args.push(province);
+      args.push('--no-open');
+      const child = cp.spawn(NODE_BIN, args, {
+        cwd: FARDIS,
+        maxBuffer: 10 * 1024 * 1024,
+        env: { ...process.env, CHROME_PATH },
+      });
+      let stdout = '';
+      const timer = setTimeout(() => { child.kill('SIGTERM'); finish({ ok: false, error: 'زمان تمام شد' }); }, timeoutMs);
+      child.stdout.on('data', d => { stdout += d; });
+      child.stderr.on('data', () => {});
+      child.on('close', code => {
+        clearTimeout(timer);
+        const out = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        // city_report.mjs last meaningful line is "PDF: <path>"
+        let pdfFile = null;
+        for (let i = out.length - 1; i >= 0; i--) {
+          const m = out[i].match(/^PDF:\s*(.+)$/);
+          if (m) { pdfFile = m[1].trim(); break; }
+        }
+        if (pdfFile) return finish({ ok: true, pdfFile, raw: stdout });
+        for (let i = out.length - 1; i >= 0; i--) {
+          try { return finish(JSON.parse(out[i])); } catch {}
+        }
+        // no PDF and no JSON → failure; extract a concise error line
+        let err = '';
+        for (let i = out.length - 1; i >= 0; i--) {
+          if (/^(Error|FAILED|rate-limited|\u0627\u0631\u0631\u0627\u0632)/i.test(out[i])) { err = out[i]; break; }
+        }
+        finish({ ok: false, error: err || 'گزارش تولید نشد', raw: stdout });
+      });
+      child.on('error', err => { clearTimeout(timer); finish({ ok: false, error: String(err) }); });
+    });
+  });
+}
+
+// ---- Background per-city report job ----
+async function doReport(city, province) {
+  const result = await runReport(city, province, 300000);
+  reportCache = { data: result, ts: Date.now() };
+  lastReportAt = new Date().toISOString();
+  if (result.ok && result.pdfFile) {
+    try {
+      const desktopPath = process.env.USERPROFILE || 'C:\\Users\\behzad\\Desktop';
+      const fileName = path.basename(result.pdfFile);
+      const destPath = path.join(desktopPath, fileName);
+      fs.copyFileSync(result.pdfFile, destPath);
+      result.pdfFileDesktop = destPath;
+    } catch {}
+  }
+  return result;
+}
+
 // ---- Read POST body (size-limited) ----
 function readBody(req, limit = 1 << 20) {
   return new Promise(resolve => {
@@ -215,6 +282,9 @@ async function handleRequest(req, res) {
       pdfRunning,
       lastPdf: lastPdfAt,
       lastPdfData: pdfCache.data,
+      reportRunning,
+      lastReport: lastReportAt,
+      lastReportData: reportCache.data,
     });
   }
 
@@ -249,6 +319,21 @@ async function handleRequest(req, res) {
     pdfRunning = true;
     doPdf().finally(() => { pdfRunning = false; });
     return sendJson(res, { ok: true, pdfRunning: true, startedAt: new Date().toISOString(), reply: 'در حال تولید PDF...' });
+  }
+
+  // POST /api/report — گزارش کامل شهر (city_report.mjs): هر اگهی لینک داره، مهلت‌دارها قرمزن
+  if (p === '/api/report' && req.method === 'POST') {
+    const { city, province } = await readBody(req);
+    if (!isPersianName(city)) return sendJson(res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
+    if (reportRunning) {
+      return sendJson(res, { ok: true, reportRunning: true, reply: 'گزارش در حال تولید است... لطفاً کمی صبر کنید' });
+    }
+    if (reportCache.data && reportCache.data.pdfFile && (Date.now() - reportCache.ts) < CACHE_TTL) {
+      return sendJson(res, { ok: true, cached: true, ...reportCache.data });
+    }
+    reportRunning = true;
+    doReport(city, province).finally(() => { reportRunning = false; });
+    return sendJson(res, { ok: true, reportRunning: true, city, startedAt: new Date().toISOString(), reply: 'در حال تولید گزارش کامل...' });
   }
 
   // POST /api/toggle
