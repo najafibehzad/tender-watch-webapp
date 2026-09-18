@@ -702,6 +702,13 @@ function renderNewTenders(d) {
         <div>${link}</div>
       </div>`;
     }).join('');
+  } else if (d && d.ok === true && (!d.message || d.message === '') && (!d.items || d.items.length === 0)) {
+    // اسکن با موفقیت انجام شده، اما آگهی جدیدی مطابق فیلترهای فعال پیدا نشده است
+    const chips = [];
+    chips.push('<span class="new-chip zero">اسکن انجام شد؛ آگهی جدیدی یافت نشد</span>');
+    if (failed.length) chips.push(`<span class="new-chip zero">⚠️ ${failed.length} شهرستان شکست</span>`);
+    summary.innerHTML = chips.join('');
+    list.innerHTML = '<div class="new-empty">در این اسکن، آگهی جدیدی مطابق فیلترهای فعال پیدا نشد.</div>';
   } else if (d && d.message) {
     // پشتیبانی از نسخه‌های قدیمی‌تر که فقط متن خبر برمی‌گردانند
     const chips = [];

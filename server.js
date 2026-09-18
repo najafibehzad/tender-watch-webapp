@@ -238,7 +238,7 @@ async function doPdf() {
   lastPdfAt = new Date().toISOString();
   if (result.ok && result.pdfFile) {
     try {
-      const desktopPath = 'C:\\desktop';
+      const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
       const fileName = path.basename(result.pdfFile);
       const destPath = path.join(desktopPath, fileName);
       fs.copyFileSync(result.pdfFile, destPath);
@@ -309,7 +309,7 @@ async function doReport(city, province) {
   lastReportAt = new Date().toISOString();
   if (result.ok && result.pdfFile) {
     try {
-      const desktopPath = 'C:\\desktop';
+      const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
       const fileName = path.basename(result.pdfFile);
       const destPath = path.join(desktopPath, fileName);
       fs.copyFileSync(result.pdfFile, destPath);
