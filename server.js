@@ -146,6 +146,7 @@ function formatFaDateSR(iso) {
 // ---- Input validation (Persian-only) ----
 // نام باید فقط حروف فارسی/فارسی-عدد داشته باشد و با «-» شروع نشود
 // (جلوگیری از اینکه کاربر یه آرگومانِ جدید به جای نام شهر بفرسته)
+function isObject(v) { return v && typeof v === 'object' && !Array.isArray(v); }
 function isPersianName(s) {
   if (typeof s !== 'string' || s.length === 0 || s.length > 80) return false;
   if (s.trimStart().startsWith('-')) return false;
@@ -184,9 +185,10 @@ function sendGzipJson(res, data, status = 200) {
     res.end(compressed);
   });
 }
-function sendJson(res, data, status = 200) {
+function sendJson(req, res, data, status = 200) {
   const json = JSON.stringify(data);
-  if (json.length > 500) return sendGzipJson(res, data, status);
+  const acceptsGzip = req.headers['accept-encoding'] && req.headers['accept-encoding'].includes('gzip');
+  if (json.length > 500 && acceptsGzip) return sendGzipJson(res, data, status);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(json);
 }
@@ -351,12 +353,12 @@ async function handleRequest(req, res) {
 
   // GET /health — lightweight liveness, no file reads
   if (p === '/health' && req.method === 'GET') {
-    return sendJson(res, { ok: true, scanRunning, pdfRunning, port: PORT });
+    return sendJson(req, res, { ok: true, scanRunning, pdfRunning, port: PORT });
   }
 
   // GET /api/status — fast, no scan
   if (p === '/api/status' && req.method === 'GET') {
-    return sendJson(res, {
+    return sendJson(req, res, {
       ok: true,
       config: readConfig(),
       state: readState(),
@@ -376,7 +378,7 @@ async function handleRequest(req, res) {
 
   // GET /api/config
   if (p === '/api/config' && req.method === 'GET') {
-    return sendJson(res, readConfig());
+    return sendJson(req, res, readConfig());
   }
 
   // GET /api/summary — ساختاریافته: لیست آگهی‌های جدید + شهرستان‌ها + متن خبر
@@ -384,7 +386,7 @@ async function handleRequest(req, res) {
     const cfg = readConfig();
     const st = readState();
     const d = scanCache.data;
-    return sendJson(res, {
+    return sendJson(req, res, {
       ok: true,
       lastScan: lastScanAt,
       lastScanError,
@@ -404,93 +406,95 @@ async function handleRequest(req, res) {
   if (p === '/api/scan' && req.method === 'POST') {
     const now = Date.now();
     if (scanRunning) {
-      return sendJson(res, { ok: true, scanRunning: true, reply: 'اسکن در حال اجراست... لطفاً کمی صبر کنید' });
+      return sendJson(req, res, { ok: true, scanRunning: true, reply: 'اسکن در حال اجراست... لطفاً کمی صبر کنید' });
     }
     if (scanCache.data && (now - scanCache.ts) < CACHE_TTL) {
-      return sendJson(res, { ok: true, cached: true, ...scanCache.data });
+      return sendJson(req, res, { ok: true, cached: true, ...scanCache.data });
     }
     scanRunning = true;
     lastScanError = null;
     doScan().finally(() => { scanRunning = false; });
-    return sendJson(res, { ok: true, scanRunning: true, startedAt: new Date().toISOString(), reply: 'اسکن شروع شد' });
+    return sendJson(req, res, { ok: true, scanRunning: true, startedAt: new Date().toISOString(), reply: 'اسکن شروع شد' });
   }
 
   // POST /api/pdf — returns IMMEDIATELY; PDF runs in background
   if (p === '/api/pdf' && req.method === 'POST') {
     if (pdfRunning) {
-      return sendJson(res, { ok: true, pdfRunning: true, reply: 'PDF در حال تولید است... لطفاً کمی صبر کنید' });
+      return sendJson(req, res, { ok: true, pdfRunning: true, reply: 'PDF در حال تولید است... لطفاً کمی صبر کنید' });
     }
     if (pdfCache.data && (Date.now() - pdfCache.ts) < CACHE_TTL) {
-      return sendJson(res, { ok: true, cached: true, ...pdfCache.data });
+      return sendJson(req, res, { ok: true, cached: true, ...pdfCache.data });
     }
     pdfRunning = true;
     doPdf().finally(() => { pdfRunning = false; });
-    return sendJson(res, { ok: true, pdfRunning: true, startedAt: new Date().toISOString(), reply: 'در حال تولید PDF...' });
+    return sendJson(req, res, { ok: true, pdfRunning: true, startedAt: new Date().toISOString(), reply: 'در حال تولید PDF...' });
   }
 
   // POST /api/report — گزارش کامل شهر (city_report.mjs): هر اگهی لینک داره، مهلت‌دارها قرمزن
   if (p === '/api/report' && req.method === 'POST') {
     const { city, province } = await readBody(req);
-    if (!isPersianName(city)) return sendJson(res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
+    if (!isPersianName(city)) return sendJson(req, res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
     if (reportRunning) {
-      return sendJson(res, { ok: true, reportRunning: true, reply: 'گزارش در حال تولید است... لطفاً کمی صبر کنید' });
+      return sendJson(req, res, { ok: true, reportRunning: true, reply: 'گزارش در حال تولید است... لطفاً کمی صبر کنید' });
     }
     if (reportCache.data && reportCache.data.pdfFile && (Date.now() - reportCache.ts) < CACHE_TTL) {
-      return sendJson(res, { ok: true, cached: true, ...reportCache.data });
+      return sendJson(req, res, { ok: true, cached: true, ...reportCache.data });
     }
     reportRunning = true;
     doReport(city, province).finally(() => { reportRunning = false; });
-    return sendJson(res, { ok: true, reportRunning: true, city, startedAt: new Date().toISOString(), reply: 'در حال تولید گزارش کامل...' });
+    return sendJson(req, res, { ok: true, reportRunning: true, city, startedAt: new Date().toISOString(), reply: 'در حال تولید گزارش کامل...' });
   }
 
   // POST /api/toggle
   if (p === '/api/toggle' && req.method === 'POST') {
     const { name } = await readBody(req);
-    if (!isPersianName(name)) return sendJson(res, { ok: false, error: 'نام نامعتبر' }, 400);
+    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام نامعتبر' }, 400);
     const cfg = readConfig();
-    if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
+    if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
     const ci = cfg.districts?.find(d => d.name === name);
-    if (ci) {
+      if (ci) {
       ci._disabled = !ci._disabled;
       writeJson(CONFIG_P, cfg);
       scanCache = { data: null, ts: 0 };
-      return sendJson(res, { ok: true, on: !ci._disabled,
-        reply: `${name} ${!ci._disabled ? 'روشن' : 'vimosh'} شد` });
+      return sendJson(req, res, { ok: true, on: !ci._disabled,
+        reply: `${name} ${!ci._disabled ? 'روشن شد' : 'vimosh شد'}` });
     }
     if (cfg.topics && cfg.topics[name] !== undefined) {
-      cfg.topics[name]._disabled = !cfg.topics[name]._disabled;
+      const topicValue = cfg.topics[name];
+      if (!isObject(topicValue)) cfg.topics[name] = { words: topicValue, _disabled: true, _reportSelected: true };
+      else { topicValue._disabled = !topicValue._disabled; if (topicValue._reportSelected === undefined) topicValue._reportSelected = true; }
       writeJson(CONFIG_P, cfg);
       scanCache = { data: null, ts: 0 };
-      return sendJson(res, { ok: true, on: !cfg.topics[name]._disabled,
-        reply: `topic ${name} ${!cfg.topics[name]._disabled ? 'on' : 'off'}` });
+      return sendJson(req, res, { ok: true, on: cfg.topics[name]._disabled ? false : true,
+        reply: `${name} ${cfg.topics[name]._disabled ? 'vimosh' : 'روشن شد'}` });
     }
-    return sendJson(res, { ok: false, error: 'not found' }, 404);
+    return sendJson(req, res, { ok: false, error: 'not found' }, 404);
   }
 
   // POST /api/add-city
   if (p === '/api/add-city' && req.method === 'POST') {
     const { city, province } = await readBody(req);
-    if (!isPersianName(city)) return sendJson(res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
+    if (!isPersianName(city)) return sendJson(req, res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
     const cfg = readConfig();
-    if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
+    if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
     if (cfg.districts?.some(d => d.name === city)) {
-      return sendJson(res, { ok: false, error: 'شهر قبلاً وجود دارد' }, 400);
+      return sendJson(req, res, { ok: false, error: 'شهر قبلاً وجود دارد' }, 400);
     }
     cfg.districts.push({ name: city, id: '0', province: province || 'نام مشخص نشده' });
     writeJson(CONFIG_P, cfg);
     scanCache = { data: null, ts: 0 };
-    return sendJson(res, { ok: true, reply: `${city} اضافه شد` });
+    return sendJson(req, res, { ok: true, reply: `${city} اضافه شد` });
   }
 
   // POST /api/add-topic
   if (p === '/api/add-topic' && req.method === 'POST') {
     const { name, keywords, park } = await readBody(req);
-    if (!isPersianName(name)) return sendJson(res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
-    if (!isPersianKeywords(keywords)) return sendJson(res, { ok: false, error: 'کلیدواژه نامعتبر' }, 400);
+    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
+    if (!isPersianKeywords(keywords)) return sendJson(req, res, { ok: false, error: 'کلیدواژه نامعتبر' }, 400);
     const cfg = readConfig();
-    if (!cfg) return sendJson(res, { ok: false, error: 'config not found' }, 500);
+    if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
     if (cfg.topics && cfg.topics[name] !== undefined) {
-      return sendJson(res, { ok: false, error: 'topic already exists' }, 400);
+      return sendJson(req, res, { ok: false, error: 'topic already exists' }, 400);
     }
     if (!cfg.topics) cfg.topics = {};
     cfg.topics[name] = keywords.split(',').map(k => k.trim()).filter(Boolean);
@@ -501,7 +505,7 @@ async function handleRequest(req, res) {
     }
     writeJson(CONFIG_P, cfg);
     scanCache = { data: null, ts: 0 };
-    return sendJson(res, { ok: true, reply: `topic ${name} اضافه شد` });
+    return sendJson(req, res, { ok: true, reply: `topic ${name} اضافه شد` });
   }
 
   // Static files

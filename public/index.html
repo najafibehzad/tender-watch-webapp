@@ -301,6 +301,11 @@
   .new-item .ni-title { font-size: 14px; font-weight: 600; margin-top: 2px; }
   .new-item .ni-meta { font-size: 11px; color: var(--text2); }
   .new-item .ni-meta b { color: var(--text); }
+  .new-item .ni-deadline { font-size: 11px; margin-top: 4px; padding: 3px 8px; border-radius: 4px; display: inline-block; }
+  .new-item .ni-deadline.urgent { background: rgba(255,71,87,0.15); color: #ff6b7a; border: 1px solid rgba(255,71,87,0.3); }
+  .new-item .ni-deadline.soon { background: rgba(255,165,2,0.12); color: #ffa502; border: 1px solid rgba(255,165,2,0.25); }
+  .new-item .ni-deadline.future { background: rgba(0,212,170,0.08); color: var(--accent); border: 1px solid rgba(0,212,170,0.2); }
+  .new-item .ni-deadline.past { background: rgba(107,122,141,0.15); color: var(--text3); border: 1px solid rgba(107,122,141,0.25); }
   .new-item a { font-size: 12px; color: var(--accent); text-decoration: none; }
   .new-item a:hover { text-decoration: underline; }
   .new-item.error { border-right-color: var(--red); }
@@ -608,6 +613,29 @@ function escJs(s) {
   return String(s).replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\\/g,'\\\\');
 }
 
+// Convert English digits to Persian digits (used for deadline display)
+const toFa = s => String(s).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+// ---- Jalali date helpers for deadline urgency ----
+const jDigits = s => String(s || '').replace(/[۰-۹]/g, ch => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(ch)));
+const jNum = s => { const m = jDigits(s).match(/(\d{4})\/(\d{2})\/(\d{2})/); return m ? Number(m[1] + m[2] + m[3]) : null; };
+function todayJNum() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const g = t => Number((parts.find(p => p.type === t) || {}).value);
+    return g('year') * 10000 + g('month') * 100 + g('day');
+  } catch { return null; }
+}
+const isJLeap = y => [1, 5, 9, 13, 17, 22, 26, 30].includes(y % 33);
+const jToAbsDays = n => { // n = y*10000+m*100+d
+  const y = Math.floor(n / 10000), m = Math.floor(n / 100) % 100, d = n % 100;
+  const ml = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+  let abs = 0;
+  for (let yy = 1; yy < y; yy++) abs += isJLeap(yy) ? 366 : 365;
+  for (let i = 0; i < m - 1; i++) abs += ml[i];
+  return abs + d;
+};
+const daysLeft = (dl, today) => dl == null || today == null ? null : jToAbsDays(dl) - jToAbsDays(today);
+
 // ---- آگهی‌های جدید (ساختاریافته) ----
 function renderNewTenders(d) {
   const list = document.getElementById('newList');
@@ -636,13 +664,41 @@ function renderNewTenders(d) {
 
     list.innerHTML = items.map(it => {
       const link = it.link ? `<a href="${escHtml(it.link)}" target="_blank" rel="noopener">🔗 مشاهده در ستاد</a>` : '';
+      
+      // Determine deadline urgency
+      let deadlineClass = '';
+      let deadlineText = it.deadline || '—';
+      if (it.deadline && it.deadline !== '—') {
+        const today = todayJNum();
+        const deadlineNum = jNum(it.deadline);
+        if (today !== null && deadlineNum !== null) {
+          const days = daysLeft(deadlineNum, today);
+          if (days !== null) {
+            if (days < 0) {
+              deadlineClass = 'past';
+              deadlineText = `مهلت گذشته (${toFa(String(-days))} روز)`;
+            } else if (days <= 3) {
+              deadlineClass = 'urgent';
+              deadlineText = `امروز آخر!`;
+            } else if (days <= 7) {
+              deadlineClass = 'soon';
+              deadlineText = `فقط ${toFa(String(days))} روز`;
+            } else {
+              deadlineClass = 'future';
+              deadlineText = `${toFa(String(days))} روز`;
+            }
+          }
+        }
+      }
+      
       return `<div class="new-item">
         <div class="ni-top">
           <span class="ni-no">${it.no || ''}</span>
           <span class="ni-tag">${escHtml(it.tag || '')}</span>
         </div>
         <div class="ni-title">${escHtml(it.title || '—')}</div>
-        <div class="ni-meta"><b>سازمان:</b> ${escHtml(it.org || '—')} · <b>مهلت ارسال:</b> ${escHtml(it.deadline || '—')} · <b>شماره:</b> ${escHtml(it.number || '—')}</div>
+        <div class="ni-meta"><b>سازمان:</b> ${escHtml(it.org || '—')} · <b>شماره:</b> ${escHtml(it.number || '—')}</div>
+        <div class="ni-meta"><b>مهلت ارسال:</b> <span class="ni-deadline ${deadlineClass}">${deadlineText}</span></div>
         <div>${link}</div>
       </div>`;
     }).join('');
@@ -878,7 +934,7 @@ function onProvinceChange() {
   const citySel = document.getElementById('reportCity');
   const cfg = currentConfig;
   const cities = (cfg?.districts || [])
-    .filter(d => !prov || (d.province || '') === prov)
+    .filter(d => !d._disabled && (!prov || (d.province || '') === prov))
     .map(d => d.name)
     .sort();
   const prev = citySel.value;
@@ -989,6 +1045,11 @@ async function loadStatus() {
 
     // لیست آگهی‌های جدید (ساختاریافته یا پشتیبانی از متن قدیمی)
     renderNewTenders(data.lastScanData);
+
+    // هشدار خودکار برای آگهی‌های جدید
+    if (data.lastScanData && data.lastScanData.newCount > 0) {
+      toast(`✅ ${data.lastScanData.newCount} آگهی جدید در اسکن اخیر یافت شد`);
+    }
 
     const cs = citySig(currentConfig);
     const ts = topicSig(currentConfig);
