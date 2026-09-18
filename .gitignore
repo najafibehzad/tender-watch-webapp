@@ -4,3 +4,4 @@
 # runtime artifacts
 .server.pid
 webapp-boot.log
+server.log
