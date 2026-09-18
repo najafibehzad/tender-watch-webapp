@@ -489,7 +489,7 @@ async function handleRequest(req, res) {
   // POST /api/add-topic
   if (p === '/api/add-topic' && req.method === 'POST') {
     const { name, keywords, park } = await readBody(req);
-    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
+    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام نامعتبر' }, 400);
     if (!isPersianKeywords(keywords)) return sendJson(req, res, { ok: false, error: 'کلیدواژه نامعتبر' }, 400);
     const cfg = readConfig();
     if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
@@ -506,6 +506,50 @@ async function handleRequest(req, res) {
     writeJson(CONFIG_P, cfg);
     scanCache = { data: null, ts: 0 };
     return sendJson(req, res, { ok: true, reply: `topic ${name} اضافه شد` });
+  }
+
+  // POST /api/delete-city — حذف دائمی شهر از فهرست اسکن
+  if (p === '/api/delete-city' && req.method === 'POST') {
+    const { name } = await readBody(req);
+    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام شهر نامعتبر' }, 400);
+    const cfg = readConfig();
+    if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
+    const districtIndex = (cfg.districts || []).findIndex(d => d.name === name);
+    const hadTarget = !!(cfg.targetCities && Object.prototype.hasOwnProperty.call(cfg.targetCities, name));
+    if (districtIndex < 0 && !hadTarget) {
+      return sendJson(req, res, { ok: false, error: 'شهر پیدا نشد' }, 404);
+    }
+    if (districtIndex >= 0) cfg.districts.splice(districtIndex, 1);
+    if (hadTarget) delete cfg.targetCities[name];
+    const st = readJson(STATE_P, null);
+    if (st && Array.isArray(st.disabled)) {
+      st.disabled = st.disabled.filter(x => x !== `شهر ${name}`);
+      writeJson(STATE_P, st);
+    }
+    writeJson(CONFIG_P, cfg);
+    scanCache = { data: null, ts: 0 };
+    return sendJson(req, res, { ok: true, deleted: true, type: 'city', name, reply: `${name} از فهرست اسکن حذف شد` });
+  }
+
+  // POST /api/delete-topic — حذف دائمی موضوع از فهرست اسکن
+  if (p === '/api/delete-topic' && req.method === 'POST') {
+    const { name } = await readBody(req);
+    if (!isPersianName(name)) return sendJson(req, res, { ok: false, error: 'نام موضوع نامعتبر' }, 400);
+    const cfg = readConfig();
+    if (!cfg) return sendJson(req, res, { ok: false, error: 'config not found' }, 500);
+    if (!cfg.topics || !Object.prototype.hasOwnProperty.call(cfg.topics, name)) {
+      return sendJson(req, res, { ok: false, error: 'موضوع پیدا نشد' }, 404);
+    }
+    delete cfg.topics[name];
+    if (Array.isArray(cfg.parkTopics)) cfg.parkTopics = cfg.parkTopics.filter(t => t !== name);
+    const st = readJson(STATE_P, null);
+    if (st && Array.isArray(st.disabled)) {
+      st.disabled = st.disabled.filter(x => x !== name);
+      writeJson(STATE_P, st);
+    }
+    writeJson(CONFIG_P, cfg);
+    scanCache = { data: null, ts: 0 };
+    return sendJson(req, res, { ok: true, deleted: true, type: 'topic', name, reply: `${name} از فهرست اسکن حذف شد` });
   }
 
   // Static files

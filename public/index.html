@@ -698,7 +698,8 @@ function renderNewTenders(d) {
         </div>
         <div class="ni-title">${escHtml(it.title || '—')}</div>
         <div class="ni-meta"><b>سازمان:</b> ${escHtml(it.org || '—')} · <b>شماره:</b> ${escHtml(it.number || '—')}</div>
-        <div class="ni-meta"><b>مهلت ارسال:</b> <span class="ni-deadline ${deadlineClass}">${deadlineText}</span></div>
+        <div class="ni-meta"><b>${it.documentDeadline ? 'مهلت دریافت اسناد:' : 'مهلت ارسال:'}</b> <span class="ni-deadline ${deadlineClass}">${deadlineText}</span></div>
+        ${it.documentDeadline && it.sendDeadline && it.documentDeadline !== it.sendDeadline ? `<div class="ni-meta"><b>مهلت ارسال:</b> ${escHtml(it.sendDeadline)}</div>` : ''}
         <div>${link}</div>
       </div>`;
     }).join('');
@@ -790,7 +791,10 @@ function renderCities(cities) {
             <div class="item-detail">${escHtml(c.province || '')} ${c.id ? '· کد: ' + c.id : ''}</div>
           </div>
         </div>
-        <div class="toggle ${c._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(c.name)}', 'city')"></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="toggle ${c._disabled ? '' : 'on'}" onclick="toggleItem('${escJs(c.name)}', 'city')"></div>
+          <button class="btn btn-secondary" style="padding:6px 10px;font-size:11px;background:rgba(255,71,87,0.12);color:#ff6b7a;border:1px solid rgba(255,71,87,0.25);" onclick="deleteCity('${escJs(c.name)}')" title="حذف دائمی شهر">🗑 حذف</button>
+        </div>
       </div>`;
   }).join('');
 }
@@ -815,7 +819,10 @@ function renderTopics(topics) {
             <div class="item-detail">${escHtml(kws)}${disabled ? ' · خاموش' : ''}</div>
           </div>
         </div>
-        <div class="toggle ${disabled ? '' : 'on'}" onclick="toggleItem('${escJs(name)}', 'topic')"></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="toggle ${disabled ? '' : 'on'}" onclick="toggleItem('${escJs(name)}', 'topic')"></div>
+          <button class="btn btn-secondary" style="padding:6px 10px;font-size:11px;background:rgba(255,71,87,0.12);color:#ff6b7a;border:1px solid rgba(255,71,87,0.25);" onclick="deleteTopic('${escJs(name)}')" title="حذف دائمی موضوع">🗑 حذف</button>
+        </div>
       </div>`;
   }).join('');
 }
@@ -875,6 +882,40 @@ async function addTopic() {
     if (data.ok) { toast(data.reply); hideAddTopic(); await loadStatus(); }
     else { toast(data.error || 'خطا', true); }
   } catch (e) { toast('خطا در ارتباط', true); }
+}
+
+async function deleteCity(name) {
+  if (!confirm(`آیا مطمئن هستید که شهر "${name}" را به‌طور دائمی حذف می‌کنید؟\nاین عمل قابل بازگشت نیست.`)) {
+    return;
+  }
+  try {
+    const data = await apiPost('/delete-city', { name });
+    if (data.ok) {
+      toast(data.reply);
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
+}
+
+async function deleteTopic(name) {
+  if (!confirm(`آیا مطمئن هستید که موضوع "${name}" را به‌طور دائمی حذف می‌کنید؟\nاین عمل قابل بازگشت نیست.`)) {
+    return;
+  }
+  try {
+    const data = await apiPost('/delete-topic', { name });
+    if (data.ok) {
+      toast(data.reply);
+      await loadStatus();
+    } else {
+      toast(data.error || 'خطا', true);
+    }
+  } catch (e) {
+    toast('خطا در ارتباط', true);
+  }
 }
 
 async function doScan() {
@@ -1104,13 +1145,13 @@ async function loadStatus() {
 
 // Init + poll. پولِ زیرپنجره متوقف می‌شود تا CPU/برق مصرف نکند.
 loadStatus();
-let pollTimer = setInterval(loadStatus, 10000);
+let pollTimer = setInterval(loadStatus, 360000);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     clearInterval(pollTimer);
   } else {
     loadStatus();
-    pollTimer = setInterval(loadStatus, 10000);
+    pollTimer = setInterval(loadStatus, 360000);
   }
 });
 </script>
