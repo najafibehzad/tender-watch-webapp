@@ -576,6 +576,7 @@
 <script>
 const API = '/api';
 let currentConfig = null;
+let lastShownNewCount = 0;
 
 // امضاهای لیست‌ها: فقط وقتی تغییر کنند بازرسازی می‌شوند (کاهش بازرسازی ۱۵ ثانیه‌ای)
 let lastCitySig = '';
@@ -927,7 +928,7 @@ async function doScan() {
     if (data.cached) {
       toast('از کش استفاده شد — اسکن ۶۰ ثانیه پیش است');
     } else if (data.scanRunning) {
-      toast('اسکن شروع شد — هر ۱۰ ثانیه به‌روزرسانی می‌شود');
+      toast('اسکن شروع شد — وضعیت هر ۶ دقیقه به‌روزرسانی می‌شود');
     } else {
       toast(data.reply || 'اسکن کامل شد');
     }
@@ -948,7 +949,7 @@ async function doPdf() {
     if (data.cached) {
       toast('PDF از کش استفاده شد');
     } else if (data.pdfRunning) {
-      toast('در حال تولید PDF... هر ۱۰ ثانیه به‌روزرسانی می‌شود');
+      toast('در حال تولید PDF... وضعیت هر ۶ دقیقه به‌روزرسانی می‌شود');
     } else {
       toast('PDF آماده شد — ' + (data.pdfCount || 0) + ' مناقصه');
       if (data.pdfFileDesktop) {
@@ -1011,7 +1012,7 @@ async function doReport() {
     if (data.cached) {
       toast('گزارش از کش استفاده شد');
     } else if (data.reportRunning) {
-      toast(`در حال تولید گزارش کامل برای ${city}... هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
+      toast(`در حال تولید گزارش کامل برای ${city}... وضعیت هر ۶ دقیقه به‌روزرسانی می‌شود`);
     } else {
       toast(data.reply || 'گزارش آماده شد');
     }
@@ -1094,9 +1095,11 @@ async function loadStatus() {
     // لیست آگهی‌های جدید (ساختاریافته یا پشتیبانی از متن قدیمی)
     renderNewTenders(data.lastScanData);
 
-    // هشدار خودکار برای آگهی‌های جدید
-    if (data.lastScanData && data.lastScanData.newCount > 0) {
-      toast(`✅ ${data.lastScanData.newCount} آگهی جدید در اسکن اخیر یافت شد`);
+    // هشدار خودکار برای آگهی‌های جدید؛ فقط وقتی تعداد نسبت به هشدار قبلی تغییر کند
+    const newCount = data.lastScanData?.newCount || 0;
+    if (data.lastScanData && !data.scanRunning && newCount > lastShownNewCount) {
+      toast(`✅ ${newCount} آگهی جدید در اسکن اخیر یافت شد`);
+      lastShownNewCount = newCount;
     }
 
     const cs = citySig(currentConfig);

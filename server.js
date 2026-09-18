@@ -622,7 +622,7 @@ function startServer(firstPort) {
       PORT = port;
       console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${port} آماده است`);
       console.log(`   http://localhost:${port}`);
-      console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۱۰ ثانیه به‌روزرسانی می‌شود`);
+      console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۶ دقیقه به‌روزرسانی می‌شود`);
     });
   };
   tryListen();
