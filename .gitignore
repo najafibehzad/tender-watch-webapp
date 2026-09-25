@@ -5,3 +5,6 @@
 .server.pid
 webapp-boot.log
 server.log
+# runtime logs
+webapp.log
+guard.log

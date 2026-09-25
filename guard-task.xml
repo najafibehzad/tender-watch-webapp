@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>دیده‌بان مناقصات - watchdog هر ۵ دقیقه: اگر وب‌اپ (3725) پایین بود احیا می‌کند</Description></RegistrationInfo>
+  <Triggers>
+    <TimeTrigger>
+      <Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+      <StartBoundary>2026-09-21T00:10:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
+  </Triggers>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Users\behzad\.zcode\workspace\default\tender-watch-webapp\guard.cmd</Command>
+      <WorkingDirectory>C:\Users\behzad\.zcode\workspace\default\tender-watch-webapp</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
