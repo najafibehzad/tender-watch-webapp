@@ -19,10 +19,21 @@ const WATCH = path.resolve(HERE, '..', 'tender-watch');
 const PUBLIC = path.resolve(HERE, 'public');
 const NODE_BIN = process.execPath;
 const WATCH_SCRIPT = path.join(WATCH, 'tender_watch.mjs');
-let PORT = parseInt(process.env.PORT || '3725', 10);
+let PORT = parseInt(process.env.PORT || '3725', 10) || 3725; // PORT=0 نامعتبر → پیش‌فرض
 
 const CONFIG_P = path.join(WATCH, 'watch_config.json');
 const STATE_P = path.join(WATCH, 'watch_state.json');
+
+// ---- پایداری: لاگ فایلی با مهر زمانی + فایل PID ----
+const APP_LOG = path.join(HERE, 'webapp.log');
+const PID_P = path.join(HERE, '.server.pid');
+function log(...args) {
+  const line = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  console.log(line);
+  try { fs.appendFileSync(APP_LOG, new Date().toISOString() + ' ' + line + '\n', 'utf8'); } catch {}
+}
+const _origErr = console.error.bind(console);
+console.error = (...a) => { _origErr(...a); try { fs.appendFileSync(APP_LOG, new Date().toISOString() + ' [err] ' + a.map(String).join(' ') + '\n', 'utf8'); } catch {} };
 
 // ---- Cache & background job state ----
 const CACHE_TTL = 60000; // 60 seconds
@@ -66,6 +77,57 @@ function readState() {
   if (st) st.seenCount = Object.keys(st.seen || {}).length;
   return st;
 }
+
+// ---- تپش قلب: اسکن خودکار دوره‌ای + فاصلهٔ فزاینده + پرش از پنجرهٔ شبانهٔ ستاد (۲۳-۷) ----
+// ۲۰۲۶-۰۹-۲۵ خاموش شد به‌درخواست کاربر: تپش ۵ دقیقه‌ای گارد ستاد را داغ نگه می‌داشت
+// و اسکن ستادِ رادار مناقصات (۳۷۳۱) را ناکام می‌کرد. اسکن دستی از صفحه سر جایش است.
+// برای روشن‌کردن دوباره: HEARTBEAT_ENABLED را true کنید.
+const HEARTBEAT_ENABLED = false;
+const HEARTBEAT_BASE_MS = 5 * 60 * 1000;
+const NIGHT_START = 23, NIGHT_END = 7;
+let hbNextAt = HEARTBEAT_ENABLED ? Date.now() + 60 * 1000 : 0;
+let hbFails = 0;
+let hbBusy = false;
+function inNightWindow(d = new Date()) {
+  const h = d.getHours();
+  return h >= NIGHT_START || h < NIGHT_END;
+}
+async function heartbeatTick() {
+  if (hbBusy) return;
+  hbBusy = true;
+  try {
+    if (inNightWindow()) { hbNextAt = Date.now() + HEARTBEAT_BASE_MS; return; }
+    if (scanRunning) return;
+    if (scanCache.data && Date.now() - scanCache.ts < CACHE_TTL) { hbNextAt = Date.now() + 2 * 60 * 1000; return; }
+    log('[heartbeat] auto-scan start (fails=' + hbFails + ')');
+    const result = await runWatch(['scan', '--json'], 300000);
+    scanCache = { data: result, ts: Date.now() };
+    lastScanAt = new Date().toISOString();
+    if (result.ok) {
+      hbFails = 0;
+      lastScanError = null;
+      log('[heartbeat] scan OK newCount=' + (result.newCount ?? '?'));
+      if (result.newCount > 0 && !pdfRunning) {
+        log('[heartbeat] آگهی جدید → PDF خودکار');
+        pdfRunning = true;
+        doPdf().catch(() => {}).finally(() => { pdfRunning = false; });
+      }
+    } else {
+      hbFails++;
+      lastScanError = result.error || 'اسکن خودکار ناموفق';
+      log('[heartbeat] scan FAIL: ' + lastScanError);
+    }
+  } catch (e) {
+    hbFails++;
+    lastScanError = String((e && e.message) || e);
+    log('[heartbeat] error: ' + lastScanError);
+  } finally {
+    const delayMin = hbFails === 0 ? 5 : Math.min(30, 5 + hbFails * 5);
+    hbNextAt = Date.now() + delayMin * 60 * 1000;
+    hbBusy = false;
+  }
+}
+setInterval(() => { if (!HEARTBEAT_ENABLED) return; if (Date.now() >= hbNextAt && !hbBusy) heartbeatTick(); }, 30 * 1000);
 
 // ---- Server-side rendering (page shows content even if JS is blocked) ----
 function escHtml(s) {
@@ -224,7 +286,7 @@ function runWatch(args, timeoutMs) {
 
 // ---- Background scan job ----
 async function doScan() {
-  const result = await runWatch(['scan', '--json'], 150000);
+  const result = await runWatch(['scan', '--json'], 300000);
   scanCache = { data: result, ts: Date.now() };
   lastScanAt = new Date().toISOString();
   lastScanError = result.ok ? null : (result.error || 'اسکن با خرابی مواجه شد');
@@ -233,22 +295,22 @@ async function doScan() {
 
 // ---- Background PDF job ----
 async function doPdf() {
-  const result = await runWatch(['pdf', '--json'], 240000);
+  const result = await runWatch(['pdf', '--json'], 300000);
   pdfCache = { data: result, ts: Date.now() };
   lastPdfAt = new Date().toISOString();
-  if (result.ok && result.pdfFile) {
-    try {
-      const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
-      const fileName = path.basename(result.pdfFile);
-      const destPath = path.join(desktopPath, fileName);
-      fs.copyFileSync(result.pdfFile, destPath);
-      result.pdfFileDesktop = destPath;
+if (result.ok && result.pdfFile) {
       try {
-        const cp = await import('node:child_process');
-        cp.execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
+        const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
+        const fileName = path.basename(result.pdfFile);
+        const destPath = path.join(desktopPath, fileName);
+        fs.copyFileSync(result.pdfFile, destPath);
+        result.pdfFileDesktop = destPath;
+        try {
+          const cp = await import('node:child_process');
+          cp.execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
+        } catch {}
       } catch {}
-    } catch {}
-  }
+    }
   return result;
 }
 
@@ -302,20 +364,31 @@ function runReport(city, province, timeoutMs) {
   });
 }
 
-// ---- Background per-city report job ----
+// ---- Background per-city report job (با تلاش مجدد روی 428/خطای شبکه) ----
 async function doReport(city, province) {
-  const result = await runReport(city, province, 300000);
+  let result = await runReport(city, province, 300000);
+  for (let attempt = 2; attempt <= 3 && !result.ok; attempt++) {
+    const em = String(result.error || '');
+    if (!/428|rate-limited|timeout|TLS|socket|ECONN|network/i.test(em)) break;
+    log('[report] تلاش ' + attempt + '/3 پس از خطا: ' + em.slice(0, 80));
+    await new Promise(r => setTimeout(r, 15 * 1000 * attempt));
+    result = await runReport(city, province, 300000);
+  }
   reportCache = { data: result, ts: Date.now() };
   lastReportAt = new Date().toISOString();
-  if (result.ok && result.pdfFile) {
-    try {
-      const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
-      const fileName = path.basename(result.pdfFile);
-      const destPath = path.join(desktopPath, fileName);
-      fs.copyFileSync(result.pdfFile, destPath);
-      result.pdfFileDesktop = destPath;
-    } catch {}
-  }
+if (result.ok && result.pdfFile) {
+      try {
+        const desktopPath = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Desktop');
+        const fileName = path.basename(result.pdfFile);
+        const destPath = path.join(desktopPath, fileName);
+        fs.copyFileSync(result.pdfFile, destPath);
+        result.pdfFileDesktop = destPath;
+        try {
+          const cp = await import('node:child_process');
+          cp.execFileSync('powershell.exe', ['-Command', `Start-Process "${destPath}"`], { timeout: 5000 });
+        } catch {}
+      } catch {}
+    }
   return result;
 }
 
@@ -368,6 +441,7 @@ async function handleRequest(req, res) {
       lastScanData: scanCache.data,
       lastScanError,
       pdfRunning,
+      autoScan: { nextAt: hbNextAt ? new Date(hbNextAt).toISOString() : null, fails: hbFails, nightWindow: inNightWindow() },
       lastPdf: lastPdfAt,
       lastPdfData: pdfCache.data,
       reportRunning,
@@ -413,7 +487,19 @@ async function handleRequest(req, res) {
     }
     scanRunning = true;
     lastScanError = null;
-    doScan().finally(() => { scanRunning = false; });
+    // Scan in background; always reset scanRunning when done (even on error)
+    (async () => {
+      try {
+        const result = await runWatch(['scan', '--json'], 300000);
+        scanCache = { data: result, ts: Date.now() };
+        lastScanAt = new Date().toISOString();
+        lastScanError = result.ok ? null : (result.error || 'اسکن با خرابی مواجه شد');
+      } catch (e) {
+        lastScanError = String(e);
+      } finally {
+        scanRunning = false;
+      }
+    })();
     return sendJson(req, res, { ok: true, scanRunning: true, startedAt: new Date().toISOString(), reply: 'اسکن شروع شد' });
   }
 
@@ -441,7 +527,16 @@ async function handleRequest(req, res) {
       return sendJson(req, res, { ok: true, cached: true, ...reportCache.data });
     }
     reportRunning = true;
-    doReport(city, province).finally(() => { reportRunning = false; });
+    // اجرای گزارش در پس‌زمینه — اما اگر اسکن/PDF در جریان است اول تمام شدنش را صبر کن
+    // (دو درخواست هم‌زمان به ستاد = خطای 428)
+    (async () => {
+      const waitStart = Date.now();
+      while ((scanRunning || pdfRunning) && Date.now() - waitStart < 300000) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      if (scanRunning || pdfRunning) log('[report] صبر ۵ دقیقه‌ای تمام شد — با وجود مشغول بودن ادامه می‌دهیم');
+      await doReport(city, province).catch(() => {});
+    })().finally(() => { reportRunning = false; });
     return sendJson(req, res, { ok: true, reportRunning: true, city, startedAt: new Date().toISOString(), reply: 'در حال تولید گزارش کامل...' });
   }
 
@@ -601,12 +696,29 @@ function makeServer() {
 // پیام شفاف می‌دهیم و یه سری پورت بعدی رو هم امتحان می‌کنیم تا اپ از اول نیفته.
 function startServer(firstPort) {
   let port = firstPort;
+  let cleanedUp = false;
   const tryListen = () => {
     const server = makeServer();
-    server.once('error', err => {
+    server.once('error', async err => {
       if (err.code === 'EADDRINUSE') {
         console.error(`⚠️ پورت ${port} اشغال است — احتمالاً یه نسخهٔ قدیمی از همین اپ روی این پورت اجرا می‌کنه.`);
         console.error(`   برای پاک کردن: PowerShell → Get-NetTCPConnection -LocalPort ${port} | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`);
+        if (!cleanedUp) {
+          cleanedUp = true;
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const psOut = execFileSync('powershell.exe', ['-NoProfile', '-Command',
+              '(Get-NetTCPConnection -LocalPort ' + port + ' -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique | ForEach-Object { if ($_ -ne ' + process.pid + ') { $c = Get-CimInstance Win32_Process -Filter "ProcessId=$_"; if ($c -and $c.CommandLine -like "*tender-watch-webapp*server.js*") { Stop-Process -Id $_ -Force; "KILLED " + $_ } } }'
+            ], { timeout: 20000, encoding: 'utf8' });
+            if (String(psOut).includes('KILLED')) {
+              log('[port] نمونهٔ قدیمی روی پورت ' + port + ' بسته شد — دوباره تلاش می‌کنیم');
+              tryListen();
+              return;
+            }
+          } catch (e) {
+            log('[port] پاک‌سازی خودکار ناموفق: ' + String((e && e.message) || e).slice(0, 80));
+          }
+        }
         port++;
         if (port > firstPort + 3) {
           console.error('❌ هیچ پورتی باز نشد');
@@ -623,11 +735,21 @@ function startServer(firstPort) {
       console.log(`🚀 دیده‌بان مناقصات وب اپ روی پورت ${port} آماده است`);
       console.log(`   http://localhost:${port}`);
       console.log(`   اسکن/PDF در پس‌زمینه اجرا می‌شوند — صفحه هر ۶ دقیقه به‌روزرسانی می‌شود`);
+      try { fs.writeFileSync(PID_P, String(process.pid), 'utf8'); } catch {}
+      log('[boot] listening on port ' + port + ' (pid ' + process.pid + ')');
     });
   };
   tryListen();
 }
 startServer(PORT);
+
+function shutdown(signal) {
+  log('[shutdown] ' + signal);
+  try { fs.unlinkSync(PID_P); } catch {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 process.on('uncaughtException', err => console.error('Uncaught:', err.message));
 process.on('unhandledRejection', err => console.error('Unhandled rejection:', err.message));
