@@ -925,6 +925,7 @@ async function doScan() {
   btn.innerHTML = '<span class="spinner"></span> در حال اسکن...';
   try {
     const data = await apiPost('/scan', {});
+    await loadStatus();
     if (data.cached) {
       toast('از کش استفاده شد — اسکن ۶۰ ثانیه پیش است');
     } else if (data.scanRunning) {
@@ -946,6 +947,7 @@ async function doPdf() {
   btn.innerHTML = '<span class="spinner"></span> در حال تولید PDF...';
   try {
     const data = await apiPost('/pdf', {});
+    await loadStatus();
     if (data.cached) {
       toast('PDF از کش استفاده شد');
     } else if (data.pdfRunning) {
@@ -1009,6 +1011,7 @@ async function doReport() {
   badge.style.display = 'inline';
   try {
     const data = await apiPost('/report', { city, province });
+    await loadStatus();
     if (data.cached) {
       toast('گزارش از کش استفاده شد');
     } else if (data.reportRunning) {
@@ -1018,6 +1021,7 @@ async function doReport() {
     }
   } catch (e) {
     toast('خطا در ارتباط', true);
+    await loadStatus();
   }
 }
 
